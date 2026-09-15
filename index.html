@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Son Frekans</title>
+<link rel="stylesheet" href="style.css">
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#07090b">
+<link rel="icon" href="icons/icon-192.png">
+
+<!-- iOS: Ana Ekrana Ekle desteği -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Son Frekans">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+</head>
+<body>
+  <div class="screen">
+    <div class="title-screen">
+      <div class="title-snow"></div>
+      <div class="title-scanlines"></div>
+      <div class="emergency-led"><span class="led-dot"></span><span class="led-text">REC</span></div>
+
+      <div class="title-screen-content">
+        <div class="title-screen-heading">SIĞINAK: BANT KAYITLARI</div>
+        <div class="freq-indicator">[ FREKANS: 94.2 MHz — ÇEVRİMDIŞI ]</div>
+
+        <div class="title-menu">
+          <button class="title-btn btn-new-broadcast" type="button">[ YENİ YAYIN BAŞLAT ]</button>
+          <button class="title-btn btn-continue-broadcast" type="button" disabled>[ YAYINA DEVAM ET ]</button>
+          <button class="title-btn btn-settings-menu" type="button">[ SİNYAL AYARLARI ]</button>
+          <button class="title-btn btn-archive" type="button">[ BANT ARŞİVİ ]</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="archive-popup-overlay">
+      <div class="archive-popup">
+        <div class="archive-popup-header">&gt; BANT ARŞİVİ SORGULANIYOR...</div>
+        <div class="archive-popup-summary"></div>
+        <ul class="archive-popup-list"></ul>
+        <button class="archive-popup-close" type="button">[ KAPAT ]</button>
+      </div>
+    </div>
+
+    <div class="hud-top">
+      <div class="rec"><span class="dot"></span> REC <span class="rec-clock">00:00:00</span></div>
+      <div class="hud-right">
+        <div class="hud-day">GÜN 1</div>
+        <button class="settings-btn" type="button" aria-label="Ayarlar" title="Sinyal Kontrol Ünitesi">[ AYARLAR ]</button>
+      </div>
+    </div>
+
+    <div class="settings-overlay">
+      <div class="settings-panel">
+        <div class="settings-header">
+          <span>SİNYAL KONTROL ÜNİTESİ</span>
+          <button class="settings-close" type="button" aria-label="Kapat">✕</button>
+        </div>
+
+        <div class="settings-row">
+          <label for="masterSlider">ANA SES</label>
+          <input type="range" id="masterSlider" class="pot-slider" min="0" max="100" value="100">
+          <span class="settings-value" id="masterValue">100%</span>
+        </div>
+        <div class="settings-row">
+          <label for="musicSlider">MÜZİK</label>
+          <input type="range" id="musicSlider" class="pot-slider" min="0" max="100" value="100">
+          <span class="settings-value" id="musicValue">100%</span>
+        </div>
+        <div class="settings-row">
+          <label for="sfxSlider">TELSİZ / SFX</label>
+          <input type="range" id="sfxSlider" class="pot-slider" min="0" max="100" value="100">
+          <span class="settings-value" id="sfxValue">100%</span>
+        </div>
+
+        <button class="fullscreen-btn" type="button">[ TAM EKRAN ]</button>
+      </div>
+    </div>
+
+    <div class="title-block">
+      <div class="title">SON FREKANS</div>
+      <div class="subtitle">BANT #001: Ali Kayra</div>
+    </div>
+
+    <div class="card-stage">
+      <span class="drag-hint left">◀</span>
+      <span class="drag-hint right">▶</span>
+      <div class="card">
+        <span class="card-corner corner-tl"></span>
+        <span class="card-corner corner-tr"></span>
+        <span class="card-corner corner-bl"></span>
+        <span class="card-corner corner-br"></span>
+
+        <div class="stamp stamp-left">[ SUSTUR // REDDET ]</div>
+        <div class="stamp stamp-right">[ YAYINA AL // ONAYLA ]</div>
+
+        <div class="card-content">
+          <div class="portrait-wrap">
+            <img id="cardImage" src="images/radio_caller.jpg" alt="">
+          </div>
+          <span class="who">Konuşmacı</span>
+          <div class="quote-text">Kart metni burada görünecek.</div>
+          <div class="choices">
+            <div class="choice left">
+              <span class="choice-label">Sol Seçim</span>
+            </div>
+            <div class="choice right">
+              <span class="choice-label">Sağ Seçim</span>
+            </div>
+          </div>
+
+          <div class="tuner" hidden>
+            <div class="tuner-readout"><span class="tuner-freq">096.4</span> MHz</div>
+            <div class="tuner-track">
+              <div class="tuner-needle"></div>
+            </div>
+            <div class="tuner-status-row">
+              <span class="tuner-led"></span>
+              <span class="tuner-status-text">ARIYOR...</span>
+            </div>
+            <div class="tuner-lock-bar"><div class="tuner-lock-fill"></div></div>
+          </div>
+
+          <div class="archive-line intro-archive" hidden></div>
+        </div>
+      </div>
+      <div class="relationship-hud"></div>
+    </div>
+
+    <div class="meters">
+      <div class="meter m-fuel">
+        <span class="ping-dot"></span>
+        <div class="label">[ GÜÇ ]</div>
+        <div class="segment-bar"></div>
+      </div>
+      <div class="meter m-trust">
+        <span class="ping-dot"></span>
+        <div class="label">[ GÜVEN ]</div>
+        <div class="segment-bar"></div>
+      </div>
+      <div class="meter m-sanity">
+        <span class="ping-dot"></span>
+        <div class="label">[ AKIL ]</div>
+        <div class="segment-bar"></div>
+      </div>
+      <div class="meter m-signal">
+        <span class="ping-dot"></span>
+        <div class="label">[ SİNYAL ]</div>
+        <div class="segment-bar"></div>
+      </div>
+    </div>
+
+    <div class="ending-overlay">
+      <div class="tape-label">◼ BANT SONU</div>
+      <div class="ending-title"></div>
+      <div class="ending-body"></div>
+      <div class="ending-stats"></div>
+      <div class="archive-line ending-archive"></div>
+      <button class="restart-btn">Yeni Bant Başlat</button>
+    </div>
+
+    <div class="scanlines"></div>
+    <div class="grain"></div>
+    <div class="vignette"></div>
+    <div class="crt-curvature"></div>
+  </div>
+
+  <script src="deck.js"></script>
+  <script src="game.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js").catch(() => { /* çevrimdışı destek olmadan devam et */ });
+      });
+    }
+  </script>
+</body>
+</html>
