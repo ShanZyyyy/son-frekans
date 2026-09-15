@@ -27,13 +27,17 @@ const state = {
   lastCardWasCallback: false, // renderCard'a "bu kart bir callback'ten geldi" bilgisini taşır
   relationships: { selin: 50, serkan: 50, military: 50, mert: 50, defne: 50 }, // NPC/faksiyon güven skorları (0-100)
   tuning: null, // { targetFreq, successCardId, failureCardId, currentFreq, lockStartedAt, offTargetAccumMs }
+  hardwareFault: null, // { type: 'power' | 'oxygen' } — onarılana kadar kart çekimini kilitler
+  buseSecretFound: false, // bu koşuda 94.2 MHz gizli kanalı zaten bulundu mu
+  memoryLettersFound: [], // çözülmüş memory_letter kart id'leri — 4'ü tamamlanınca true_escape zinciri açılır
+  memory: null, // { letterId, targetPhase, lockStartedAt } — aktif Zihin Eşleme oturumu
+  characterFates: {}, // { mert/defne: final kart id, selin: "good"|"bad", ceylan: "stayed"|"left" } — bu koşuda netleşen kaderler
 };
 
 const els = {};
 let recSeconds = 0;
 let recTimerHandle = null;
 let glitchTextHandle = null;
-let defaultStampRightText = "";
 
 function qs(sel) { return document.querySelector(sel); }
 function clamp(v) { return Math.max(STATS_MIN, Math.min(STATS_MAX, v)); }
@@ -58,7 +62,7 @@ function saveSetting(key, value) {
 }
 
 /* ---------- Bant Arşivi & Rekor Sistemi (localStorage) ---------- */
-const TOTAL_ENDINGS = 8;
+const TOTAL_ENDINGS = 9;
 function loadDiscoveredEndings() {
   try {
     const raw = JSON.parse(localStorage.getItem("sonFrekansDiscoveredEndings") || "[]");
@@ -82,6 +86,176 @@ function formatArchiveLine() {
   return `Kayıtlı En Uzun Yayın: ${highScore} Gün | Keşfedilen Sonlar: ${discovered}/${TOTAL_ENDINGS}`;
 }
 
+/* ---------- Bant Arşivi: Mert/Buse final kasetleri (ölüm sonları dışındaki bonus kayıtlar) ---------- */
+const CHARACTER_FINALES = {
+  mert_finale_resolved: {
+    title: "MERT: SADAKAT",
+    transcript: "“Gitmeyi düşündüm ama gidemedim. Buradayım, seninle. Sonuna kadar.” Cephane sandığını sana geri veriyor.",
+  },
+  mert_finale_flee: {
+    title: "MERT: KAÇIŞ",
+    transcript: "Mert'i bulamıyorsun. Cephane sandığının yarısı da onunla birlikte gitmiş. Bir not bırakmış: “Üzgünüm. Daha fazla dayanamadım.”",
+  },
+  mert_finale_hostage: {
+    title: "MERT: REHİNE KRİZİ",
+    transcript: "Elinde silahla konsolun başında duruyor. “Kimse çıkmıyor, kimse girmiyor, ta ki bana gerçeği söyleyene kadar!”",
+  },
+  defne_epilogue_ally: {
+    title: "BUSE: MÜTTEFİK",
+    transcript: "“Sağ çıktık. İkimiz de.” Sesi ilk kez gerçekten rahatlamış geliyor. “Frekansımı hep açık tutacağım, ihtiyacın olursa.”",
+  },
+  defne_epilogue_neutral: {
+    title: "BUSE: TARAFSIZ",
+    transcript: "“Sağ çıktık ama... bilmiyorum artık kimin fikriydi bu, kimin sesiydi asıl. Belki bir süre konuşmasak iyi olur.”",
+  },
+  defne_epilogue_rival: {
+    title: "BUSE: RAKİP",
+    transcript: "Hattın sonunda Buse yok artık, ya da hiç yoktu. Sadece senin sesini tekrar eden bir statik var.",
+  },
+};
+function loadDiscoveredFinales() {
+  try {
+    const raw = JSON.parse(localStorage.getItem("sonFrekansDiscoveredFinales") || "[]");
+    return new Set(Array.isArray(raw) ? raw : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+function saveDiscoveredFinale(id) {
+  const set = loadDiscoveredFinales();
+  set.add(id);
+  localStorage.setItem("sonFrekansDiscoveredFinales", JSON.stringify([...set]));
+}
+
+/* ---------- Karakter Dosyası (Character Codex) ----------
+   Betimlemeler her zaman görünür; durum satırı ya bu koşuda/geçmişte netleşmiş kesin bir kadere
+   (bkz. CHARACTER_FINALES, sel_supply_4_*, ceylan_leaving_thought) ya da güncel ilişki seviyesine
+   göre üretilir. Kesin kader bir kez localStorage'a yazılınca (saveCharacterFate) kalıcı kalır —
+   Bant Arşivi'ndeki final kayıtlarıyla aynı mantık. */
+const CHARACTER_PROFILES = [
+  {
+    key: "ceylan",
+    name: CAST.ceylan,
+    image: "images/ceylan.jpg",
+    bio: "Sığınağın son mühendisi. Jeneratörü ve vericiyi tek başına ayakta tutuyor, kendi sağlığını hiç önemsemeden. Bir gün gitmeyi düşündüğünü söylüyor ama hep kalıyor.",
+  },
+  {
+    key: "serkan",
+    name: CAST.serkan,
+    image: "images/serkan.jpg",
+    bio: "Bölgeden kaçan bir asker. Sana güvenip güvenemeyeceğine hâlâ karar veremedi, ama telsizi hiç kapatmıyor.",
+  },
+  {
+    key: "selin",
+    name: "Selin (Sığınak-12)",
+    image: "images/selin.jpg",
+    bio: "Komşu bir sığınağın lideri. Elindeki insanları hayatta tutmaya çalışıyor, zor kararlar için sana danışıyor.",
+  },
+  {
+    key: "mert",
+    name: CAST.mert,
+    image: "images/mert.jpg",
+    bio: "İstasyonun eski nöbetçisi. Kapıda donarak bulundu, o günden beri sığınakta kalıyor.",
+  },
+  {
+    key: "defne",
+    name: CAST.defne,
+    image: "images/buse.jpg",
+    bio: "Korsan bir telsizci. Resmi kanallardan uzak duruyor, kendi gizli hattından seninle temas kuruyor.",
+  },
+  {
+    key: "fisilti",
+    name: CAST.fisilti,
+    image: "images/fisilti.jpg",
+    bio: "88.4 MHz'de yaşayan bir şey. Sinyal ne kadar güçlenirse, sesi o kadar netleşiyor.",
+  },
+];
+
+const CEYLAN_FATE_TEXT = {
+  stayed: "Kalmanı istedin. Hâlâ burada, seninle.",
+  left: "Gitmesine izin verdin. O günden beri telsizde yok.",
+};
+const SELIN_FATE_TEXT = {
+  good: "Sığınak-12 ayakta kaldı. Sana borçlu olduklarını söylüyorlar.",
+  bad: "Kayıp. Sığınak-12'den kimse ona ulaşamıyor.",
+};
+const FISILTI_STATUS_TIERS = [
+  { min: 75, label: "HÂKİM", cls: "tier-broken", text: "Artık neredeyse her cümlenin arasına sızıyor." },
+  { min: 50, label: "YAKIN", cls: "tier-tense", text: "Sesini net duyuyorsun, bazen kendi sesinle karışıyor." },
+  { min: 25, label: "HAFİF", cls: "tier-stable", text: "Ara sıra bir fısıltı, belki de sadece parazit." },
+  { min: 0, label: "SESSİZ", cls: "tier-strong", text: "Şu an sessiz. Belki de hiç var olmadı." },
+];
+
+function loadCharacterFates() {
+  try {
+    return JSON.parse(localStorage.getItem("sonFrekansCharacterFates") || "{}");
+  } catch (e) {
+    return {};
+  }
+}
+function saveCharacterFate(key, value) {
+  const fates = loadCharacterFates();
+  fates[key] = value;
+  localStorage.setItem("sonFrekansCharacterFates", JSON.stringify(fates));
+}
+
+function getCharacterStatus(profile) {
+  // Canlı (bu koşuda netleşen) kader, kalıcı kayıttan önce gelir.
+  const fates = { ...loadCharacterFates(), ...state.characterFates };
+
+  if ((profile.key === "mert" || profile.key === "defne") && fates[profile.key] && CHARACTER_FINALES[fates[profile.key]]) {
+    const finale = CHARACTER_FINALES[fates[profile.key]];
+    return { label: finale.title, cls: "tier-strong", text: finale.transcript };
+  }
+  if (profile.key === "selin" && fates.selin) {
+    return {
+      label: fates.selin === "good" ? "GÜVENDE" : "KAYIP",
+      cls: fates.selin === "good" ? "tier-strong" : "tier-broken",
+      text: SELIN_FATE_TEXT[fates.selin],
+    };
+  }
+  if (profile.key === "ceylan" && fates.ceylan) {
+    return {
+      label: fates.ceylan === "stayed" ? "YANINDA" : "AYRILDI",
+      cls: fates.ceylan === "stayed" ? "tier-strong" : "tier-tense",
+      text: CEYLAN_FATE_TEXT[fates.ceylan],
+    };
+  }
+  if (profile.key === "fisilti") {
+    const tier = FISILTI_STATUS_TIERS.find((t) => state.signal >= t.min);
+    return { label: tier.label, cls: tier.cls, text: tier.text };
+  }
+  if (state.relationships[profile.key] !== undefined) {
+    const tier = relationshipTier(state.relationships[profile.key]);
+    return { label: tier.label, cls: tier.cls, text: `Şu anki bağ seviyesi: ${tier.label.toLocaleLowerCase("tr")}.` };
+  }
+  return { label: "BİLİNMİYOR", cls: "", text: "Henüz bu kişi hakkında kesin bir şey öğrenmedin." };
+}
+
+function populateCharacterCodex() {
+  els.codexList.innerHTML = "";
+  CHARACTER_PROFILES.forEach((profile) => {
+    const status = getCharacterStatus(profile);
+    const card = document.createElement("div");
+    card.className = "codex-card";
+    card.innerHTML = `
+      <img class="codex-portrait" src="${profile.image}" alt="">
+      <div class="codex-info">
+        <div class="codex-name">${profile.name}</div>
+        <div class="codex-bio">${profile.bio}</div>
+        <div class="codex-status ${status.cls}"><span class="status-label">[ ${status.label} ]</span> ${status.text}</div>
+      </div>`;
+    els.codexList.appendChild(card);
+  });
+}
+function openCharacterCodex() {
+  populateCharacterCodex();
+  els.codexOverlay.classList.add("show");
+}
+function closeCharacterCodex() {
+  els.codexOverlay.classList.remove("show");
+}
+
 /* ---------- Yarım kalmış yayın (Yayına Devam Et) ---------- */
 const SAVED_GAME_KEY = "sonFrekansSavedGame";
 function saveGameProgress() {
@@ -98,6 +272,10 @@ function saveGameProgress() {
     usedThisPhase: [...state.usedThisPhase],
     isNight: state.isNight,
     relationships: state.relationships,
+    hardwareFault: state.hardwareFault,
+    buseSecretFound: state.buseSecretFound,
+    memoryLettersFound: state.memoryLettersFound,
+    characterFates: state.characterFates,
   };
   localStorage.setItem(SAVED_GAME_KEY, JSON.stringify(snapshot));
 }
@@ -145,12 +323,28 @@ function resolveCallbackCard(due) {
 }
 
 /* ---------- Kart seçimi / render ---------- */
+/* ---------- Hafıza Mektupları: belirli günlerde zorla devreye giren anlatı kartları ---------- */
+const MEMORY_LETTER_DAYS = { 10: "memory_letter_1", 25: "memory_letter_2", 40: "memory_letter_3", 55: "memory_letter_4" };
+function pendingMemoryLetterId() {
+  const days = Object.keys(MEMORY_LETTER_DAYS).map(Number).sort((a, b) => a - b);
+  for (const d of days) {
+    const id = MEMORY_LETTER_DAYS[d];
+    if (state.day >= d && !state.memoryLettersFound.includes(id)) return id;
+  }
+  return null;
+}
+
 function pickCard() {
   state.lastCardWasCallback = false;
   if (state.forcedNextId) {
     const forced = DECK.find((c) => c.id === state.forcedNextId);
     state.forcedNextId = null;
     if (forced) return forced;
+  }
+  const letterId = pendingMemoryLetterId();
+  if (letterId) {
+    const letterCard = DECK.find((c) => c.id === letterId);
+    if (letterCard) return letterCard;
   }
   const dueIndex = state.pendingCallbacks.findIndex((cb) => cb.remaining <= 0);
   if (dueIndex !== -1) {
@@ -176,6 +370,71 @@ const CALLBACK_WHISPER_INJECTIONS = [
   "Belki de bu hiç olmadı.",
   "Sana bunu daha önce de anlatmış mıydım?",
 ];
+
+/* ---------- Akıl Sağlığı Çöküş Katmanı (sanity < 35) ---------- */
+const SANITY_CRISIS_THRESHOLD = 35;
+const ZALGO_MARKS = ["̀", "́", "̖", "̗", "҉", "͟", "̴", "̵"];
+const WORD_FLICKER_MS = 400;
+
+function zalgoify(word) {
+  return word.split("").map((ch) => {
+    let out = ch;
+    const markCount = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < markCount; i++) out += ZALGO_MARKS[Math.floor(Math.random() * ZALGO_MARKS.length)];
+    return out;
+  }).join("");
+}
+
+let wordFlickerUntil = 0;
+function maybeFlickerWord() {
+  if (Date.now() < wordFlickerUntil) return;
+  const words = state.currentTrueText.split(" ");
+  if (words.length < 2) return;
+  const idx = Math.floor(Math.random() * words.length);
+  const rendered = words.map((w, i) => (i === idx ? `<span class="zalgo-word">${zalgoify(w)}</span>` : w)).join(" ");
+  els.quoteText.innerHTML = rendered;
+  wordFlickerUntil = Date.now() + WORD_FLICKER_MS;
+  setTimeout(() => {
+    if (!state.ended) els.quoteText.textContent = state.currentTrueText;
+  }, WORD_FLICKER_MS);
+}
+
+/* Portre sonar dalgası: basılı tutunca (pointerdown) dışa doğru genişleyip silinen halka.
+   .portrait-wrap'ın kendi overflow:hidden'ı halkayı kırpacağından, halka bir kardeş öğe olarak
+   .card-content'e eklenir ve konumu portrenin gerçek dikdörtgenine göre satır-içi hesaplanır. */
+const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+function spawnSonarWave() {
+  if (prefersReducedMotion) return; // animasyon CSS'te kapalı; animationend hiç tetiklenmez, halka temizlenemezdi
+  const container = els.portraitWrap.parentElement;
+  const contentRect = container.getBoundingClientRect();
+  const portraitRect = els.portraitWrap.getBoundingClientRect();
+  const ring = document.createElement("span");
+  ring.className = "sonar-ring";
+  ring.style.left = (portraitRect.left - contentRect.left) + "px";
+  ring.style.top = (portraitRect.top - contentRect.top) + "px";
+  ring.style.width = portraitRect.width + "px";
+  ring.style.height = portraitRect.height + "px";
+  ring.style.color = getComputedStyle(els.portraitWrap).borderColor;
+  container.appendChild(ring);
+  ring.addEventListener("animationend", () => ring.remove());
+}
+function bindPortraitEvents() {
+  // stopPropagation YOK: portreden başlayan bir sürükleme normal kart swipe'ını kesintiye uğratmamalı.
+  els.portraitWrap.addEventListener("pointerdown", spawnSonarWave);
+}
+
+/* Mert/Buse portresi: Akıl <20 iken birkaç saniyede bir anlık tekinsiz negatif-flaş. */
+function schedulePortraitHorrorFlash() {
+  const delay = 2000 + Math.random() * 1200;
+  setTimeout(() => {
+    const hasCharacterAvatar = els.portraitWrap.classList.contains("avatar-mert") || els.portraitWrap.classList.contains("avatar-buse");
+    if (!state.ended && !state.hardwareFault && state.sanity < 20 && hasCharacterAvatar) {
+      els.portraitWrap.classList.add("horror-flash");
+      setTimeout(() => els.portraitWrap.classList.remove("horror-flash"), 220);
+    }
+    schedulePortraitHorrorFlash();
+  }, delay);
+}
 
 /* ---------- Mert/Buse portre parıltısı + gizli güven göstergesi ---------- */
 const RELATIONSHIP_TIERS = [
@@ -211,6 +470,158 @@ function updateRelationshipDisplay(card) {
   }
 }
 
+/* ---------- Kart arkası: seçim etki tahminleri (PWR ▲, SAN ▼ vb.) ---------- */
+const IMPACT_METER_META = {
+  power: { label: "PWR", varName: "--meter-fuel" },
+  trust: { label: "TRS", varName: "--meter-trust" },
+  sanity: { label: "SAN", varName: "--meter-sanity" },
+  signal: { label: "SIG", varName: "--meter-signal" },
+};
+
+function renderImpactHints(container, effects) {
+  container.innerHTML = "";
+  if (!effects) return;
+  Object.entries(IMPACT_METER_META).forEach(([key, meta]) => {
+    const val = effects[key];
+    if (typeof val !== "number" || val === 0) return;
+    const tag = document.createElement("span");
+    tag.className = "impact-tag";
+    tag.style.color = `var(${meta.varName})`;
+    tag.textContent = `${meta.label} ${val > 0 ? "▲" : "▼"}`;
+    container.appendChild(tag);
+  });
+}
+
+/* ========================================================================
+   HAFIZA MEKTUPLARI & ZİHİN EŞLEME (Memory Lore Engine)
+   ======================================================================== */
+const MEMORY_SANITY_BONUS = 15;
+const MEMORY_LOCK_TOLERANCE = 6; // 0-100 faz ölçeğinde, dairesel mesafe
+const MEMORY_LOCK_MS = 1200;
+const MEMORY_TICK_MS = 80;
+
+/* {{...}} işaretli bölümleri sansürlü (siyah bar) ya da açık (revealed) render eder.
+   innerHTML kullanılmaz — her parça textContent/createElement ile eklenir, injection riski yok. */
+function renderLetterText(container, rawText, revealed) {
+  container.innerHTML = "";
+  const regex = /\{\{(.*?)\}\}/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(rawText))) {
+    if (match.index > lastIndex) container.appendChild(document.createTextNode(rawText.slice(lastIndex, match.index)));
+    const span = document.createElement("span");
+    span.className = revealed ? "redacted revealed" : "redacted";
+    span.textContent = revealed ? match[1] : "█".repeat(Math.max(4, match[1].length));
+    container.appendChild(span);
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < rawText.length) container.appendChild(document.createTextNode(rawText.slice(lastIndex)));
+}
+
+function buildWavePath(phaseDeg) {
+  const width = 300, height = 80, midY = height / 2, amplitude = 22, cycles = 3;
+  const phaseRad = (phaseDeg / 100) * Math.PI * 2;
+  const points = [];
+  for (let x = 0; x <= width; x += 6) {
+    const y = midY + amplitude * Math.sin((x / width) * cycles * 2 * Math.PI + phaseRad);
+    points.push(`${x === 0 ? "M" : "L"}${x},${y.toFixed(1)}`);
+  }
+  return points.join(" ");
+}
+
+function phaseDistance(a, b) {
+  const d = Math.abs(a - b);
+  return Math.min(d, 100 - d);
+}
+
+let memoryTickHandle = null;
+function startMemoryResonance(card) {
+  state.memory = { letterId: card.id, targetPhase: Math.floor(Math.random() * 100), lockStartedAt: null };
+  els.memoryLetter.hidden = true;
+  els.memoryResonance.hidden = false;
+  els.memoryLed.classList.remove("tuned");
+  els.memoryStatusText.textContent = "AYARLANIYOR...";
+  els.memoryLockFill.style.width = "0%";
+  els.memorySlider.value = String(Math.floor(Math.random() * 100));
+  els.memorySlider.style.setProperty("--fill", els.memorySlider.value + "%");
+  els.memoryWaveRef.setAttribute("d", buildWavePath(state.memory.targetPhase));
+  els.memoryWavePlayer.setAttribute("d", buildWavePath(Number(els.memorySlider.value)));
+  AudioEngine.ensure();
+  if (memoryTickHandle) clearInterval(memoryTickHandle);
+  memoryTickHandle = setInterval(memoryResonanceTick, MEMORY_TICK_MS);
+}
+
+function memoryResonanceTick() {
+  const m = state.memory;
+  if (!m) return;
+  const current = Number(els.memorySlider.value);
+  const distance = phaseDistance(current, m.targetPhase);
+  if (distance <= MEMORY_LOCK_TOLERANCE) {
+    if (!m.lockStartedAt) m.lockStartedAt = Date.now();
+    const held = Date.now() - m.lockStartedAt;
+    els.memoryLed.classList.add("tuned");
+    els.memoryStatusText.textContent = "EŞLEŞİYOR...";
+    els.memoryLockFill.style.width = Math.min(100, (held / MEMORY_LOCK_MS) * 100) + "%";
+    if (held >= MEMORY_LOCK_MS) completeMemoryResonance();
+  } else {
+    m.lockStartedAt = null;
+    els.memoryLed.classList.remove("tuned");
+    els.memoryStatusText.textContent = "AYARLANIYOR...";
+    els.memoryLockFill.style.width = "0%";
+  }
+}
+
+function completeMemoryResonance() {
+  if (memoryTickHandle) { clearInterval(memoryTickHandle); memoryTickHandle = null; }
+  const letterId = state.memory.letterId;
+  state.memory = null;
+  if (!state.memoryLettersFound.includes(letterId)) state.memoryLettersFound.push(letterId);
+  applyEffects({ sanity: MEMORY_SANITY_BONUS });
+  updateHUD();
+  AudioEngine.playMemoryRevealChime();
+  vibrate(60);
+
+  const card = DECK.find((c) => c.id === letterId);
+  els.memoryResonance.hidden = true;
+  els.memoryLetter.hidden = false;
+  renderLetterText(els.memoryLetterText, card.text, true);
+  els.memoryFocusBtn.hidden = true;
+  els.memoryContinueBtn.hidden = false;
+}
+
+function onMemoryContinue() {
+  els.memoryLetter.hidden = true;
+  document.documentElement.classList.remove("memory-mode");
+  els.cardStage.classList.remove("memory-active");
+  state.day += 1;
+  updateNightShift();
+  updateHUD();
+  if (state.memoryLettersFound.length >= 4) {
+    // Dört mektup da çözüldü (bu fonksiyon yalnızca bir mektup çözülünce çağrılır, dolayısıyla
+    // bu dal en fazla bir kez — tam dördüncü mektupta — tetiklenir): gizli final zincirini kuyruğa al.
+    state.forcedNextId = "memory_code_complete";
+  }
+  const endingKey = checkEnding();
+  if (endingKey) {
+    triggerEnding(endingKey);
+    return;
+  }
+  advanceToNextCard();
+}
+
+function bindMemoryEvents() {
+  els.memoryFocusBtn.addEventListener("click", () => {
+    const card = DECK.find((c) => c.id === state.currentCardId);
+    startMemoryResonance(card);
+  });
+  els.memoryContinueBtn.addEventListener("click", onMemoryContinue);
+  els.memorySlider.addEventListener("pointerdown", (e) => e.stopPropagation());
+  els.memorySlider.addEventListener("input", () => {
+    els.memorySlider.style.setProperty("--fill", els.memorySlider.value + "%");
+    els.memoryWavePlayer.setAttribute("d", buildWavePath(Number(els.memorySlider.value)));
+  });
+}
+
 function renderCard(card, { animateIn = true } = {}) {
   state.currentCardId = card.id;
   state.usedThisPhase.add(card.id);
@@ -225,18 +636,58 @@ function renderCard(card, { animateIn = true } = {}) {
 
   els.cardImage.src = card.image;
   els.speaker.textContent = card.speaker;
-  els.quoteText.textContent = state.currentTrueText;
+  // memory_letter kartlarında ham metin {{...}} işaretleyicileri taşır — burada değil,
+  // yalnızca renderLetterText ile .memory-letter-text içinde (sansürlü/açık) gösterilir.
+  els.quoteText.textContent = card.type === "memory_letter" ? "Eski bir kağıt parçası elinde titriyor." : state.currentTrueText;
   els.quoteText.classList.remove("hallucinating");
 
   updateRelationshipDisplay(card);
 
   const isTuneCard = card.type === "radio_tune";
-  els.choices.hidden = isTuneCard;
+  const isMemoryCard = card.type === "memory_letter";
+  els.choices.hidden = isTuneCard || isMemoryCard;
   els.tuner.hidden = !isTuneCard;
   els.cardStage.classList.toggle("tuning-active", isTuneCard);
-  if (!isTuneCard) {
+  if (!isTuneCard && !isMemoryCard) {
     els.leftLabel.textContent = card.left.label;
     els.rightLabel.textContent = card.right.label;
+    renderImpactHints(els.impactLeft, card.left.effects);
+    renderImpactHints(els.impactRight, card.right.effects);
+  }
+
+  // Her yeni kart ön yüzle başlar; Tuner/Hafıza kartlarında çevirmenin bir anlamı yok
+  // (arka yüzde seçenek olmadığından) — çevirme düğmeleri o kartlarda tamamen gizleniyor.
+  els.cardFlipper.classList.remove("flipped");
+  els.card.classList.toggle("no-flip", isTuneCard || isMemoryCard);
+
+  // Bir önceki kartta arıza/gizli kanal/hafıza katmanı açık kalmış olabilir — yeni kartta sıfırla.
+  els.hardwareFault.hidden = true;
+  els.cardStage.classList.remove("fault-active");
+  els.buseSecretBanner.classList.remove("show");
+  els.portraitWrap.style.display = "";
+  els.memoryLetter.hidden = !isMemoryCard;
+  els.memoryResonance.hidden = true;
+  els.cardStage.classList.toggle("memory-active", isMemoryCard);
+  document.documentElement.classList.toggle("memory-mode", isMemoryCard);
+  if (isMemoryCard) {
+    els.portraitWrap.style.display = "none"; // yıpranmış mektup panosuna yer açmak için portre gizlenir
+    renderLetterText(els.memoryLetterText, card.text, false);
+    els.memoryFocusBtn.hidden = false;
+    els.memoryContinueBtn.hidden = true;
+  }
+
+  // Bant Arşivi: Mert/Buse finaline ulaşıldıysa kalıcı bir kaset kaydı düşer.
+  if (CHARACTER_FINALES[card.id]) {
+    saveDiscoveredFinale(card.id);
+    const charKey = card.id.startsWith("mert_") ? "mert" : "defne";
+    state.characterFates[charKey] = card.id;
+    saveCharacterFate(charKey, card.id);
+  }
+  // Karakter Dosyası: Selin'in erzak krizinin kesin sonucu.
+  if (card.id === "sel_supply_4_good" || card.id === "sel_supply_4_bad") {
+    const fate = card.id === "sel_supply_4_good" ? "good" : "bad";
+    state.characterFates.selin = fate;
+    saveCharacterFate("selin", fate);
   }
 
   const isIntroCard = card.id === "__intro__";
@@ -306,6 +757,22 @@ function updateTunerUI() {
 function tuningTick() {
   const t = state.tuning;
   if (!t) return;
+
+  // Buse Canlı Telsiz Frekansı: hangi Tuner kartında olursa olsun, 94.2 MHz'e kilitlenmek
+  // kartın kendi hedefinden bağımsız gizli bir kanalı açar (bkz. STORY_META / title screen ipucu).
+  if (!state.buseSecretFound) {
+    const buseDistance = Math.abs(t.currentFreq - SECRET_BUSE_FREQ);
+    if (buseDistance <= SECRET_BUSE_TOLERANCE) {
+      t.buseHoldStartedAt = t.buseHoldStartedAt || Date.now();
+      if (Date.now() - t.buseHoldStartedAt >= SECRET_BUSE_HOLD_MS) {
+        triggerBuseSecretChannel();
+        return;
+      }
+    } else {
+      t.buseHoldStartedAt = null;
+    }
+  }
+
   const distance = Math.abs(t.currentFreq - t.targetFreq);
   const inTolerance = distance <= TUNE_TOLERANCE;
   const maxDistance = Math.max(t.targetFreq - TUNE_MIN_FREQ, TUNE_MAX_FREQ - t.targetFreq);
@@ -348,6 +815,162 @@ function stopTuning() {
   els.cardStage.classList.remove("tuning-active");
 }
 
+/* ---------- Buse Canlı Telsiz Frekansı (94.2 MHz gizli kanal) ---------- */
+const SECRET_BUSE_FREQ = 94.2;
+const SECRET_BUSE_TOLERANCE = 0.3;
+const SECRET_BUSE_HOLD_MS = 1400;
+
+function triggerBuseSecretChannel() {
+  stopTuning();
+  state.buseSecretFound = true;
+  AudioEngine.playBuseSecretSting();
+  vibrate([30, 60, 30]);
+  els.buseSecretBanner.classList.add("show");
+
+  state.day += 1;
+  updateNightShift();
+  updateHUD();
+
+  const endingKey = checkEnding();
+  if (endingKey) {
+    triggerEnding(endingKey);
+    return;
+  }
+  state.forcedNextId = "defne_secret_channel";
+  setTimeout(() => advanceToNextCard(), 900);
+}
+
+/* ---------- Ortak "sıradaki karta geç" akışı: swipe ve Tuner çözümü burada birleşir,
+   böylece Sığınak Donanım Arıza Döngüsü her iki yoldan da devreye girebilir. ---------- */
+function advanceToNextCard() {
+  if (maybeTriggerHardwareFault()) {
+    renderHardwareFault();
+    saveGameProgress();
+    return;
+  }
+  const next = pickCard();
+  renderCard(next);
+  saveGameProgress();
+}
+
+/* ========================================================================
+   SIĞINAK DONANIM ARIZA DÖNGÜSÜ
+   ======================================================================== */
+const HARDWARE_FAULT_BASE_CHANCE = 0.05;
+const HARDWARE_FAULT_LOWPOWER_CHANCE = 0.4;
+const HARDWARE_FAULT_LOW_POWER_THRESHOLD = 25;
+const REPAIR_HOLD_MS = 3000;
+const OXYGEN_DRAIN_INTERVAL_MS = 4000;
+const OXYGEN_DRAIN_AMOUNT = 5;
+
+const HARDWARE_FAULTS = {
+  power: {
+    title: "[ PWR_CRITICAL ]",
+    cls: "fault-power",
+    desc: "Jeneratör aşırı ısındı, türbin kilitlenmek üzere. Elle resetlemezsen yayın tamamen kesilebilir.",
+  },
+  oxygen: {
+    title: "[ OXYGEN_FAIL ]",
+    cls: "fault-oxygen",
+    desc: "Havalandırma filtresi tıkandı. Giderilmezse her birkaç saniyede bir Akıl'ını törpüler.",
+  },
+};
+
+function maybeTriggerHardwareFault() {
+  if (state.hardwareFault || state.ended) return false;
+  const chance = state.power < HARDWARE_FAULT_LOW_POWER_THRESHOLD ? HARDWARE_FAULT_LOWPOWER_CHANCE : HARDWARE_FAULT_BASE_CHANCE;
+  if (Math.random() >= chance) return false;
+  state.hardwareFault = { type: Math.random() < 0.5 ? "power" : "oxygen" };
+  return true;
+}
+
+function renderHardwareFault() {
+  const fault = state.hardwareFault;
+  const meta = HARDWARE_FAULTS[fault.type];
+  els.choices.hidden = true;
+  els.tuner.hidden = true;
+  els.hardwareFault.hidden = false;
+  els.cardStage.classList.add("fault-active");
+  els.card.classList.add("no-flip");
+  els.cardFlipper.classList.remove("flipped");
+  // Önceki kartın portresi/metni arıza panelinin altında kalıp kartı taşırmasın diye gizlenir
+  // (inline style ile — [hidden] üzerinden gitmek burada .quote-text/.portrait-wrap'ın kendi
+  // display:flex kuralıyla aynı özgüllükte çakışır, bkz. proje genelindeki [hidden] tuzağı).
+  els.portraitWrap.style.display = "none";
+  els.speaker.textContent = "SİSTEM UYARISI";
+  els.quoteText.textContent = "";
+  els.relationshipHud.classList.remove("show");
+  els.faultTitle.textContent = meta.title;
+  els.faultTitle.className = `fault-title ${meta.cls}`;
+  els.faultDesc.textContent = meta.desc;
+  els.repairFill.style.width = "0%";
+  els.repairBtn.classList.remove("holding");
+  AudioEngine.playFaultAlarm(fault.type);
+  if (fault.type === "oxygen") startOxygenDrain();
+}
+
+let oxygenDrainHandle = null;
+function startOxygenDrain() {
+  stopOxygenDrain();
+  oxygenDrainHandle = setInterval(() => {
+    if (!state.hardwareFault || state.hardwareFault.type !== "oxygen") { stopOxygenDrain(); return; }
+    applyEffects({ sanity: -OXYGEN_DRAIN_AMOUNT });
+    updateHUD();
+    const endingKey = checkEnding();
+    if (endingKey) {
+      stopOxygenDrain();
+      triggerEnding(endingKey);
+    }
+  }, OXYGEN_DRAIN_INTERVAL_MS);
+}
+function stopOxygenDrain() {
+  if (oxygenDrainHandle) { clearInterval(oxygenDrainHandle); oxygenDrainHandle = null; }
+}
+
+let repairHoldHandle = null;
+let repairHoldStartedAt = 0;
+function repairTick() {
+  if (!state.hardwareFault) { cancelRepairHold(); return; }
+  const elapsed = Date.now() - repairHoldStartedAt;
+  const pct = Math.min(100, (elapsed / REPAIR_HOLD_MS) * 100);
+  els.repairFill.style.width = pct + "%";
+  if (pct >= 100) {
+    completeRepair();
+    return;
+  }
+  repairHoldHandle = requestAnimationFrame(repairTick);
+}
+function onRepairPointerDown(e) {
+  if (!state.hardwareFault) return;
+  e.preventDefault();
+  e.stopPropagation();
+  repairHoldStartedAt = Date.now();
+  els.repairBtn.classList.add("holding");
+  if (repairHoldHandle) cancelAnimationFrame(repairHoldHandle);
+  repairHoldHandle = requestAnimationFrame(repairTick);
+}
+function cancelRepairHold() {
+  if (repairHoldHandle) { cancelAnimationFrame(repairHoldHandle); repairHoldHandle = null; }
+  els.repairBtn.classList.remove("holding");
+  if (state.hardwareFault) els.repairFill.style.width = "0%";
+}
+function completeRepair() {
+  cancelRepairHold();
+  stopOxygenDrain();
+  AudioEngine.playRepairSuccessChime();
+  vibrate(60);
+  state.hardwareFault = null;
+  els.hardwareFault.hidden = true;
+  els.cardStage.classList.remove("fault-active");
+  advanceToNextCard();
+}
+function bindHardwareFaultEvents() {
+  els.repairBtn.addEventListener("pointerdown", onRepairPointerDown);
+  els.repairBtn.addEventListener("pointerup", cancelRepairHold);
+  els.repairBtn.addEventListener("pointercancel", cancelRepairHold);
+  els.repairBtn.addEventListener("pointerleave", cancelRepairHold);
+}
+
 function completeTuning(success) {
   const t = state.tuning;
   if (!t) return;
@@ -375,9 +998,8 @@ function completeTuning(success) {
     triggerEnding(endingKey);
     return;
   }
-  const resultCard = DECK.find((c) => c.id === resultId) || pickCard();
-  renderCard(resultCard);
-  saveGameProgress();
+  state.forcedNextId = resultId;
+  advanceToNextCard();
 }
 
 /* Kadran sürükleme (mouse + touch, tek API) */
@@ -452,6 +1074,10 @@ function updateHUD() {
   els.tape.textContent = `BANT #${String(state.tapeNumber).padStart(3, "0")}: ${STORY_META.operatorName}`;
   if (!meterBlackoutActive) setMeterWidths();
   updateGlitchLevel();
+  els.statReadout.power.textContent = Math.round(state.power);
+  els.statReadout.trust.textContent = Math.round(state.trust);
+  els.statReadout.sanity.textContent = Math.round(state.sanity);
+  els.statReadout.signal.textContent = Math.round(state.signal);
 }
 
 /* Akıl kritikken göstergeler 1-1.5sn için sıfıra düşüp geri dönüyor — oyuncu hangi kaynağın
@@ -478,6 +1104,7 @@ function updateGlitchLevel() {
   if (corruption >= 75) root.classList.add("glitch-level-3");
   else if (corruption >= 50) root.classList.add("glitch-level-2");
   else if (corruption >= 25) root.classList.add("glitch-level-1");
+  root.classList.toggle("sanity-crisis", state.sanity < SANITY_CRISIS_THRESHOLD && !state.ended);
 }
 
 /* ---------- Akıl düştükçe metin bozulması ---------- */
@@ -502,10 +1129,10 @@ let hallucinationUntil = 0;
 function refreshGlitchTextLoop() {
   if (glitchTextHandle) clearInterval(glitchTextHandle);
   glitchTextHandle = setInterval(() => {
-    if (state.ended) return;
+    if (state.ended || state.hardwareFault) return;
     maybeBlackoutMeters();
     const card = DECK.find((c) => c.id === state.currentCardId);
-    if (!card) return;
+    if (!card || card.type === "memory_letter") return; // ham {{...}} metni sızdırmasın, panel kendi çizimini yönetir
 
     if (Date.now() < hallucinationUntil) return; // sanrı hâlâ ekranda, bu tick'te dokunma
 
@@ -525,8 +1152,16 @@ function refreshGlitchTextLoop() {
     } else if (state.sanity < 30) {
       const intensity = (30 - state.sanity) / 60; // sanity 0 -> ~0.5, sanity 29 -> ~0.017
       els.quoteText.textContent = corruptText(state.currentTrueText, intensity);
+    } else if (state.sanity < SANITY_CRISIS_THRESHOLD) {
+      // Akıl 30-35 arası: erken uyarı — kelimeler nadiren anlık olarak zalgo'ya dönüp 400ms'de geri gelir.
+      if (Math.random() < 0.3) maybeFlickerWord();
+      else els.quoteText.textContent = state.currentTrueText;
     } else {
       els.quoteText.textContent = state.currentTrueText;
+    }
+
+    if (state.sanity < SANITY_CRISIS_THRESHOLD && Math.random() < 0.15) {
+      AudioEngine.playMicroWhisper();
     }
 
     if (card.type !== "radio_tune") {
@@ -597,6 +1232,11 @@ const ENDINGS = {
     title: "REZONANS SONU",
     body: "Mikrofonu açıyorsun ama çıkan ses senin değil. Bütün vadi, aynı anda, sonsuza kadar susuyor.",
     logLine: "Varlık operatörün sesini ele geçirdi, yayın artık onun.",
+  },
+  true_escape: {
+    title: "GERÇEK KAÇIŞ",
+    body: "Kapı açılıyor. Nükleer kış hâlâ sürüyor olsa da, artık bir sığınak-mahkûmu değilsin. Hafızan geri geldi ve seni buraya getiren gerçek de. Frekans burada bitiyor — ama sen bitmiyorsun.",
+    logLine: "Operatör hafızasını tamamen geri kazandı ve sığınaktan gerçek anlamda kaçtı.",
   },
 };
 
@@ -1136,6 +1776,26 @@ const AudioEngine = (() => {
     });
   }
 
+  /* ---------- Hafıza Mektupları: Zihin Eşleme başarıyla kilitlenince sıcak, yükselen bir "içgörü" akoru ---------- */
+  function playMemoryRevealChime() {
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [440, 554, 659, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      const start = now + i * 0.09;
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.linearRampToValueAtTime(0.09, start + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.55);
+      osc.connect(gain).connect(sfxBus);
+      osc.start(start);
+      osc.stop(start + 0.6);
+    });
+  }
+
   function playFrequencyBurstFail() {
     ensure();
     if (!ctx) return;
@@ -1164,6 +1824,104 @@ const AudioEngine = (() => {
     thud.stop(now + 0.36);
   }
 
+  /* ---------- Akıl Çöküşü: mikro fısıltı/frekans çatlaması (arka planda rastgele) ---------- */
+  function playMicroWhisper() {
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = makeNoiseBuffer(0.4);
+    const filter = ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 1800 + Math.random() * 1400;
+    filter.Q.value = 3.2;
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = Math.random() * 2 - 1;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.045, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    src.connect(filter).connect(panner).connect(gain).connect(sfxBus);
+    src.start(now);
+    src.stop(now + 0.4);
+  }
+
+  /* ---------- Sığınak Donanım Arızası: alarm bipi ---------- */
+  function playFaultAlarm(type) {
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const freq = type === "oxygen" ? 520 : 720;
+    [0, 1].forEach((i) => {
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      const start = now + i * 0.22;
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.linearRampToValueAtTime(0.1, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.16);
+      osc.connect(gain).connect(sfxBus);
+      osc.start(start);
+      osc.stop(start + 0.18);
+    });
+  }
+
+  function playRepairSuccessChime() {
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [520, 780, 1040].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      const start = now + i * 0.09;
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.linearRampToValueAtTime(0.1, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.3);
+      osc.connect(gain).connect(sfxBus);
+      osc.start(start);
+      osc.stop(start + 0.32);
+    });
+  }
+
+  /* ---------- Buse Canlı Telsiz Frekansı: gizli kanal keşfi ---------- */
+  function playBuseSecretSting() {
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const morse = ctx.createOscillator();
+    morse.type = "sine";
+    morse.frequency.value = 900;
+    const morseGain = ctx.createGain();
+    [0, 0.12, 0.24, 0.44].forEach((t, i) => {
+      const start = now + t;
+      const dur = i === 3 ? 0.18 : 0.08;
+      morseGain.gain.setValueAtTime(0, start);
+      morseGain.gain.linearRampToValueAtTime(0.08, start + 0.01);
+      morseGain.gain.linearRampToValueAtTime(0, start + dur);
+    });
+    morse.connect(morseGain).connect(sfxBus);
+    morse.start(now);
+    morse.stop(now + 0.7);
+
+    const swoosh = ctx.createBufferSource();
+    swoosh.buffer = makeNoiseBuffer(0.6);
+    const swooshFilter = ctx.createBiquadFilter();
+    swooshFilter.type = "bandpass";
+    swooshFilter.frequency.setValueAtTime(300, now);
+    swooshFilter.frequency.exponentialRampToValueAtTime(3000, now + 0.6);
+    swooshFilter.Q.value = 0.8;
+    const swooshGain = ctx.createGain();
+    swooshGain.gain.setValueAtTime(0.001, now);
+    swooshGain.gain.linearRampToValueAtTime(0.05, now + 0.2);
+    swooshGain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+    swoosh.connect(swooshFilter).connect(swooshGain).connect(sfxBus);
+    swoosh.start(now);
+    swoosh.stop(now + 0.66);
+  }
+
   return {
     ensure,
     startCrackle,
@@ -1179,6 +1937,11 @@ const AudioEngine = (() => {
     stopTunerNoise,
     playSignalLockedChime,
     playFrequencyBurstFail,
+    playMicroWhisper,
+    playFaultAlarm,
+    playRepairSuccessChime,
+    playBuseSecretSting,
+    playMemoryRevealChime,
     startMenuMusic,
     stopMenuMusic,
     startGameplayMusic,
@@ -1233,6 +1996,12 @@ function resolveChoice(side) {
   const card = DECK.find((c) => c.id === state.currentCardId);
   const choice = card[side];
   applyEffects(choice.effects);
+  // Karakter Dosyası: Ceylan'ın kalma/gitme kararı bu tek karttan netleşir.
+  if (card.id === "ceylan_leaving_thought") {
+    const fate = side === "right" ? "stayed" : "left";
+    state.characterFates.ceylan = fate;
+    saveCharacterFate("ceylan", fate);
+  }
   if (choice.nextCardId) state.forcedNextId = choice.nextCardId;
   if (choice.scheduleCallback) {
     // Tüm tanımı (id, relKey, variants) taşı — zincirleme callback'ler ve ilişki bazlı
@@ -1244,14 +2013,17 @@ function resolveChoice(side) {
   updateNightShift();
   updateHUD();
 
+  if (choice.triggerEnding) {
+    // Anlatı bazlı final (ör. true_escape) — stat eşiği kontrolünü beklemeden doğrudan tetiklenir.
+    triggerEnding(choice.triggerEnding);
+    return;
+  }
   const endingKey = checkEnding();
   if (endingKey) {
     triggerEnding(endingKey);
     return;
   }
-  const next = pickCard();
-  renderCard(next);
-  saveGameProgress();
+  advanceToNextCard();
 }
 
 function updateChoiceHighlight(dx) {
@@ -1265,7 +2037,14 @@ function updateChoiceHighlight(dx) {
   els.hintRight.style.opacity = rightAmt;
   els.stampLeft.style.opacity = leftAmt;
   els.stampRight.style.opacity = rightAmt;
-  els.stampRight.textContent = (dragState && dragState.stampOverride) ? dragState.stampOverride : defaultStampRightText;
+
+  const card = DECK.find((c) => c.id === state.currentCardId);
+  if (card && card.left && card.right) {
+    els.stampLeft.textContent = `[ ${card.left.label.toLocaleUpperCase("tr")} ]`;
+    els.stampRight.textContent = (dragState && dragState.stampOverride)
+      ? dragState.stampOverride
+      : `[ ${card.right.label.toLocaleUpperCase("tr")} ]`;
+  }
 
   updateMeterPings(dx);
 }
@@ -1294,7 +2073,9 @@ function vibrate(ms) {
 }
 
 function onPointerDown(e) {
-  if (state.ended || state.tuning) return; // Tuner açıkken standart kaydırma kilitli
+  if (state.ended || state.tuning || state.hardwareFault || state.memory) return; // Tuner/arıza/Zihin Eşleme açıkken standart kaydırma kilitli
+  const activeCard = DECK.find((c) => c.id === state.currentCardId);
+  if (activeCard && activeCard.type === "memory_letter") return; // hafıza mektubunda swipe anlamsız
   try { els.card.setPointerCapture(e.pointerId); } catch (err) { /* yakalama başarısız olsa da sürükleme devam eder */ }
   AudioEngine.startCrackle();
   const stampOverride = (state.sanity < 20 && Math.random() < STAMP_HALLUCINATION_CHANCE)
@@ -1372,9 +2153,27 @@ function bindPointerEvents() {
   els.card.addEventListener("pointercancel", onPointerUp);
 }
 
+/* ---------- Kart Çevirme (Card Flip) ---------- */
+function toggleCardFlip() {
+  if (els.card.classList.contains("no-flip")) return;
+  els.cardFlipper.classList.toggle("flipped");
+}
+
+function bindFlipEvents() {
+  els.card.addEventListener("dblclick", toggleCardFlip);
+  els.flipBtns.forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleCardFlip();
+    });
+  });
+}
+
 function bindKeyboard() {
   window.addEventListener("keydown", (e) => {
-    if (state.ended) return;
+    if (state.ended || state.hardwareFault || state.memory) return;
+    const activeCard = DECK.find((c) => c.id === state.currentCardId);
+    if (activeCard && activeCard.type === "memory_letter") return;
     if (state.tuning) {
       // Klavye erişilebilirliği: tuner açıkken oklar frekansı 0.1 MHz kaydırır.
       if (e.key === "ArrowLeft") {
@@ -1424,6 +2223,9 @@ function startIntro() {
 /* ---------- Yeniden başlat ---------- */
 function restart() {
   if (state.tuning) stopTuning();
+  if (memoryTickHandle) { clearInterval(memoryTickHandle); memoryTickHandle = null; }
+  cancelRepairHold();
+  stopOxygenDrain();
   state.power = 70;
   state.trust = 50;
   state.sanity = 80;
@@ -1435,12 +2237,23 @@ function restart() {
   state.lastCardWasCallback = false;
   state.relationships = { selin: 50, serkan: 50, military: 50, mert: 50, defne: 50 };
   state.ended = false;
+  state.hardwareFault = null;
+  state.buseSecretFound = false;
+  state.memoryLettersFound = [];
+  state.characterFates = {};
+  state.memory = null;
   state.tapeNumber = bumpTapeNumber();
   meterBlackoutActive = false;
   AudioEngine.onRestart();
   els.endingOverlay.classList.remove("show");
   els.card.classList.remove("tape-eject");
-  document.documentElement.classList.remove("glitch-level-1", "glitch-level-2", "glitch-level-3", "night-shift");
+  els.hardwareFault.hidden = true;
+  els.cardStage.classList.remove("fault-active");
+  els.buseSecretBanner.classList.remove("show");
+  els.memoryLetter.hidden = true;
+  els.memoryResonance.hidden = true;
+  els.cardStage.classList.remove("memory-active");
+  document.documentElement.classList.remove("glitch-level-1", "glitch-level-2", "glitch-level-3", "night-shift", "sanity-crisis", "memory-mode");
   updateHUD();
   startIntro();
   startRecTimer();
@@ -1449,6 +2262,10 @@ function restart() {
 function cacheEls() {
   els.card = qs(".card");
   els.cardStage = qs(".card-stage");
+  els.cardFlipper = qs(".card-flipper");
+  els.flipBtns = document.querySelectorAll(".flip-btn");
+  els.impactLeft = qs(".impact-left");
+  els.impactRight = qs(".impact-right");
   els.cardImage = qs("#cardImage");
   els.portraitWrap = qs(".portrait-wrap");
   els.relationshipHud = qs(".relationship-hud");
@@ -1470,9 +2287,31 @@ function cacheEls() {
   els.hintRight = qs(".drag-hint.right");
   els.stampLeft = qs(".stamp-left");
   els.stampRight = qs(".stamp-right");
-  defaultStampRightText = els.stampRight.textContent;
   els.archiveLineIntro = qs(".intro-archive");
   els.archiveLineEnding = qs(".ending-archive");
+
+  els.statReadout = {};
+  document.querySelectorAll(".stat-readout-value").forEach((el) => {
+    els.statReadout[el.dataset.stat] = el;
+  });
+  els.hardwareFault = qs(".hardware-fault");
+  els.faultTitle = qs(".fault-title");
+  els.faultDesc = qs(".fault-desc");
+  els.repairBtn = qs(".repair-btn");
+  els.repairFill = qs(".repair-fill");
+  els.buseSecretBanner = qs(".buse-secret-banner");
+
+  els.memoryLetter = qs(".memory-letter");
+  els.memoryLetterText = qs(".memory-letter-text");
+  els.memoryFocusBtn = qs(".memory-focus-btn");
+  els.memoryContinueBtn = qs(".memory-continue-btn");
+  els.memoryResonance = qs(".memory-resonance");
+  els.memoryWaveRef = qs(".memory-wave-ref");
+  els.memoryWavePlayer = qs(".memory-wave-player");
+  els.memorySlider = qs(".memory-slider");
+  els.memoryLed = qs(".memory-led");
+  els.memoryStatusText = qs(".memory-status-text");
+  els.memoryLockFill = qs(".memory-lock-fill");
   els.day = qs(".hud-day");
   els.recClock = qs(".rec-clock");
   els.tape = qs(".subtitle");
@@ -1508,6 +2347,15 @@ function cacheEls() {
   els.archivePopupSummary = qs(".archive-popup-summary");
   els.archivePopupList = qs(".archive-popup-list");
   els.archivePopupClose = qs(".archive-popup-close");
+  els.tapePlayer = qs(".tape-player");
+  els.tapePlayerTitle = qs(".tape-player-title");
+  els.tapeTranscript = qs(".tape-transcript");
+  els.tapePlayerClose = qs(".tape-player-close");
+  els.codexOverlay = qs(".codex-overlay");
+  els.codexList = qs(".codex-list");
+  els.codexClose = qs(".codex-close");
+  els.btnCodexTitle = qs(".btn-codex");
+  els.settingsCodexBtn = qs(".settings-codex-btn");
 }
 
 /* ---------- Ana Menü (Title Screen) ---------- */
@@ -1537,31 +2385,82 @@ function startEmergencyLed() {
   }, 1800);
 }
 
+/* ---------- Bant Arşivi: kaset listesi + oynatıcı (Tape Vault) ---------- */
+function buildTapeVaultEntries() {
+  const discoveredEndings = loadDiscoveredEndings();
+  const discoveredFinales = loadDiscoveredFinales();
+  const entries = Object.entries(ENDINGS).map(([key, ending]) => ({
+    key,
+    title: ending.title,
+    transcript: ending.body,
+    found: discoveredEndings.has(key),
+  }));
+  Object.entries(CHARACTER_FINALES).forEach(([key, finale]) => {
+    entries.push({ key, title: finale.title, transcript: finale.transcript, found: discoveredFinales.has(key) });
+  });
+  return entries.map((entry, i) => ({ ...entry, tapeLabel: `BANT_${String(i + 1).padStart(2, "0")}` }));
+}
+
 function populateArchivePopup() {
   const discovered = loadDiscoveredEndings();
   const highScore = loadHighScoreDay();
   els.archivePopupSummary.textContent =
     `Kayıtlı En Uzun Yayın: ${highScore} Gün | Keşfedilen Sonlar: ${discovered.size}/${TOTAL_ENDINGS}`;
   els.archivePopupList.innerHTML = "";
-  Object.entries(ENDINGS).forEach(([key, ending]) => {
-    const found = discovered.has(key);
+  buildTapeVaultEntries().forEach((entry) => {
     const li = document.createElement("li");
-    li.className = found ? "found" : "";
+    li.className = entry.found ? "found playable" : "";
     const mark = document.createElement("span");
     mark.className = "mark";
-    mark.textContent = found ? "[X]" : "[ ]";
+    mark.textContent = entry.found ? "[►]" : "[ ]";
     const label = document.createElement("span");
-    label.textContent = found ? ending.title : "???";
+    label.textContent = entry.found ? `${entry.tapeLabel} — ${entry.title}` : `${entry.tapeLabel} — ???`;
     li.append(mark, label);
+    if (entry.found) {
+      li.addEventListener("click", () => playTape(entry));
+    }
     els.archivePopupList.appendChild(li);
   });
 }
 function openArchivePopup() {
   populateArchivePopup();
+  closeTapePlayer();
   els.archivePopupOverlay.classList.add("show");
 }
 function closeArchivePopup() {
+  closeTapePlayer();
   els.archivePopupOverlay.classList.remove("show");
+}
+
+let tapeTypeHandle = null;
+function playTape(entry) {
+  AudioEngine.playClick();
+  AudioEngine.playTapeInsert();
+  closeTapePlayer();
+  els.tapePlayer.hidden = false;
+  els.tapePlayerTitle.textContent = `${entry.tapeLabel} — ${entry.title}`;
+  els.tapePlayer.classList.add("playing");
+
+  let i = 0;
+  const full = entry.transcript;
+  els.tapeTranscript.innerHTML = '<span class="cursor-blink">▍</span>';
+  tapeTypeHandle = setInterval(() => {
+    i += 2;
+    const shown = full.slice(0, i);
+    els.tapeTranscript.innerHTML = `${shown}<span class="cursor-blink">▍</span>`;
+    if (Math.random() < 0.12) AudioEngine.playHoverStatic();
+    if (i >= full.length) {
+      clearInterval(tapeTypeHandle);
+      tapeTypeHandle = null;
+      els.tapePlayer.classList.remove("playing");
+      els.tapeTranscript.textContent = full;
+    }
+  }, 35);
+}
+function closeTapePlayer() {
+  if (tapeTypeHandle) { clearInterval(tapeTypeHandle); tapeTypeHandle = null; }
+  els.tapePlayer.classList.remove("playing");
+  els.tapePlayer.hidden = true;
 }
 
 function hideTitleScreen() {
@@ -1602,6 +2501,10 @@ function resumeBroadcast() {
   state.lastCardWasCallback = false;
   state.showingIntro = false;
   state.ended = false;
+  state.buseSecretFound = !!saved.buseSecretFound;
+  state.hardwareFault = saved.hardwareFault || null;
+  state.memoryLettersFound = Array.isArray(saved.memoryLettersFound) ? saved.memoryLettersFound : [];
+  state.characterFates = saved.characterFates && typeof saved.characterFates === "object" ? saved.characterFates : {};
 
   updateNightShift();
   AudioEngine.stopMenuMusic();
@@ -1609,6 +2512,7 @@ function resumeBroadcast() {
   updateHUD();
   const card = DECK.find((c) => c.id === saved.currentCardId) || pickCard();
   renderCard(card, { animateIn: false });
+  if (state.hardwareFault) renderHardwareFault();
   startRecTimer();
 }
 
@@ -1617,7 +2521,7 @@ function initTitleScreen() {
   startEmergencyLed();
   els.btnContinueBroadcast.disabled = !hasSavedGame();
 
-  [els.btnNewBroadcast, els.btnContinueBroadcast, els.btnSettingsMenu, els.btnArchive].forEach((btn) => {
+  [els.btnNewBroadcast, els.btnContinueBroadcast, els.btnSettingsMenu, els.btnArchive, els.btnCodexTitle].forEach((btn) => {
     btn.addEventListener("pointerenter", () => AudioEngine.playHoverStatic());
   });
 
@@ -1628,6 +2532,12 @@ function initTitleScreen() {
   els.archivePopupClose.addEventListener("click", () => { AudioEngine.playClick(); closeArchivePopup(); });
   els.archivePopupOverlay.addEventListener("click", (e) => {
     if (e.target === els.archivePopupOverlay) closeArchivePopup();
+  });
+  els.tapePlayerClose.addEventListener("click", () => { AudioEngine.playClick(); closeTapePlayer(); });
+  els.btnCodexTitle.addEventListener("click", () => { AudioEngine.playClick(); openCharacterCodex(); });
+  els.codexClose.addEventListener("click", () => { AudioEngine.playClick(); closeCharacterCodex(); });
+  els.codexOverlay.addEventListener("click", (e) => {
+    if (e.target === els.codexOverlay) closeCharacterCodex();
   });
 
   // Ana menü açıldığında ilk tıklamada menu.mp3 başlasın (tarayıcı autoplay politikası gereği).
@@ -1671,6 +2581,7 @@ function initSettingsPanel() {
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && els.settingsOverlay.classList.contains("show")) closeSettings();
   });
+  els.settingsCodexBtn.addEventListener("click", () => { AudioEngine.playClick(); openCharacterCodex(); });
 
   function updateFullscreenLabel() {
     els.fullscreenBtn.textContent = document.fullscreenElement ? "[ TAM EKRANDAN ÇIK ]" : "[ TAM EKRAN ]";
@@ -1692,11 +2603,16 @@ function init() {
   state.tapeNumber = loadTapeNumber();
   bindPointerEvents();
   bindTunerEvents();
+  bindFlipEvents();
+  bindHardwareFaultEvents();
+  bindPortraitEvents();
+  bindMemoryEvents();
   bindKeyboard();
   els.restartBtn.addEventListener("click", restart);
   initSettingsPanel();
   initTitleScreen();
   updateHUD();
+  schedulePortraitHorrorFlash();
   // Müzik filtresi/wobble/fısıltı katmanını kart geçişlerinden bağımsız, sürekli günceller.
   setInterval(() => AudioEngine.updateForState(state.sanity, state.signal), 500);
 }

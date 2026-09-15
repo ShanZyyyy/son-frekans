@@ -32,7 +32,16 @@
           <button class="title-btn btn-continue-broadcast" type="button" disabled>[ YAYINA DEVAM ET ]</button>
           <button class="title-btn btn-settings-menu" type="button">[ SİNYAL AYARLARI ]</button>
           <button class="title-btn btn-archive" type="button">[ BANT ARŞİVİ ]</button>
+          <button class="title-btn btn-codex" type="button">[ KARAKTER DOSYASI ]</button>
         </div>
+      </div>
+    </div>
+
+    <div class="codex-overlay">
+      <div class="codex-panel">
+        <div class="codex-header">&gt; KARAKTER DOSYASI SORGULANIYOR...</div>
+        <div class="codex-list"></div>
+        <button class="codex-close" type="button">[ KAPAT ]</button>
       </div>
     </div>
 
@@ -41,6 +50,17 @@
         <div class="archive-popup-header">&gt; BANT ARŞİVİ SORGULANIYOR...</div>
         <div class="archive-popup-summary"></div>
         <ul class="archive-popup-list"></ul>
+
+        <div class="tape-player" hidden>
+          <div class="tape-reel-row">
+            <div class="tape-reel"></div>
+            <div class="tape-reel"></div>
+          </div>
+          <div class="tape-player-title"></div>
+          <div class="tape-transcript"></div>
+          <button class="tape-player-close" type="button">[ KASETİ ÇIKAR ]</button>
+        </div>
+
         <button class="archive-popup-close" type="button">[ KAPAT ]</button>
       </div>
     </div>
@@ -77,57 +97,13 @@
         </div>
 
         <button class="fullscreen-btn" type="button">[ TAM EKRAN ]</button>
+        <button class="settings-codex-btn" type="button">[ KARAKTER DOSYASI ]</button>
       </div>
     </div>
 
     <div class="title-block">
       <div class="title">SON FREKANS</div>
       <div class="subtitle">BANT #001: Ali Kayra</div>
-    </div>
-
-    <div class="card-stage">
-      <span class="drag-hint left">◀</span>
-      <span class="drag-hint right">▶</span>
-      <div class="card">
-        <span class="card-corner corner-tl"></span>
-        <span class="card-corner corner-tr"></span>
-        <span class="card-corner corner-bl"></span>
-        <span class="card-corner corner-br"></span>
-
-        <div class="stamp stamp-left">[ SUSTUR // REDDET ]</div>
-        <div class="stamp stamp-right">[ YAYINA AL // ONAYLA ]</div>
-
-        <div class="card-content">
-          <div class="portrait-wrap">
-            <img id="cardImage" src="images/radio_caller.jpg" alt="">
-          </div>
-          <span class="who">Konuşmacı</span>
-          <div class="quote-text">Kart metni burada görünecek.</div>
-          <div class="choices">
-            <div class="choice left">
-              <span class="choice-label">Sol Seçim</span>
-            </div>
-            <div class="choice right">
-              <span class="choice-label">Sağ Seçim</span>
-            </div>
-          </div>
-
-          <div class="tuner" hidden>
-            <div class="tuner-readout"><span class="tuner-freq">096.4</span> MHz</div>
-            <div class="tuner-track">
-              <div class="tuner-needle"></div>
-            </div>
-            <div class="tuner-status-row">
-              <span class="tuner-led"></span>
-              <span class="tuner-status-text">ARIYOR...</span>
-            </div>
-            <div class="tuner-lock-bar"><div class="tuner-lock-fill"></div></div>
-          </div>
-
-          <div class="archive-line intro-archive" hidden></div>
-        </div>
-      </div>
-      <div class="relationship-hud"></div>
     </div>
 
     <div class="meters">
@@ -151,6 +127,102 @@
         <div class="label">[ SİNYAL ]</div>
         <div class="segment-bar"></div>
       </div>
+    </div>
+
+    <div class="card-stage">
+      <span class="drag-hint left">◀</span>
+      <span class="drag-hint right">▶</span>
+      <div class="card">
+        <span class="card-corner corner-tl"></span>
+        <span class="card-corner corner-tr"></span>
+        <span class="card-corner corner-bl"></span>
+        <span class="card-corner corner-br"></span>
+
+        <div class="stamp stamp-left">[ SUSTUR // REDDET ]</div>
+        <div class="stamp stamp-right">[ YAYINA AL // ONAYLA ]</div>
+
+        <div class="card-flipper">
+          <div class="card-front">
+            <div class="card-content">
+              <div class="portrait-wrap">
+                <img id="cardImage" src="images/radio_caller.jpg" alt="">
+              </div>
+              <span class="who">Konuşmacı</span>
+              <div class="quote-text">Kart metni burada görünecek.</div>
+
+              <div class="choices">
+                <div class="choice left">
+                  <span class="choice-label">Sol Seçim</span>
+                  <div class="impact-hints impact-left"></div>
+                </div>
+                <div class="choice right">
+                  <span class="choice-label">Sağ Seçim</span>
+                  <div class="impact-hints impact-right"></div>
+                </div>
+              </div>
+
+              <div class="tuner" hidden>
+                <div class="tuner-readout"><span class="tuner-freq">096.4</span> MHz</div>
+                <div class="tuner-track">
+                  <div class="tuner-needle"></div>
+                </div>
+                <div class="tuner-status-row">
+                  <span class="tuner-led"></span>
+                  <span class="tuner-status-text">ARIYOR...</span>
+                </div>
+                <div class="tuner-lock-bar"><div class="tuner-lock-fill"></div></div>
+              </div>
+
+              <div class="hardware-fault" hidden>
+                <div class="fault-title">[ PWR_CRITICAL ]</div>
+                <div class="fault-desc">Arıza açıklaması burada görünecek.</div>
+                <div class="repair-row">
+                  <button class="repair-btn" type="button">[ ONAR / RESETLE ] (BASILI TUT)</button>
+                  <div class="repair-fill-track"><div class="repair-fill"></div></div>
+                  <div class="repair-status">3 SANİYE BASILI TUT</div>
+                </div>
+              </div>
+
+              <span class="buse-secret-banner">[ BUSE // KORSAN HAT ]</span>
+
+              <div class="memory-letter" hidden>
+                <div class="memory-letter-text"></div>
+                <button class="memory-focus-btn" type="button">[ ZİHNİ ODAKLA ]</button>
+                <button class="memory-continue-btn" type="button" hidden>[ DEVAM ET ]</button>
+              </div>
+
+              <div class="memory-resonance" hidden>
+                <div class="memory-resonance-label">ZİHİN EŞLEME — DALGAYI KİLİTLE</div>
+                <svg class="memory-scope" viewBox="0 0 300 80" preserveAspectRatio="none">
+                  <path class="memory-wave-ref" d=""></path>
+                  <path class="memory-wave-player" d=""></path>
+                </svg>
+                <input type="range" class="memory-slider" min="0" max="100" value="50">
+                <div class="memory-resonance-status">
+                  <span class="memory-led"></span>
+                  <span class="memory-status-text">AYARLANIYOR...</span>
+                </div>
+                <div class="memory-lock-bar"><div class="memory-lock-fill"></div></div>
+              </div>
+
+              <div class="archive-line intro-archive" hidden></div>
+            </div>
+            <button class="flip-btn" type="button" aria-label="Tersini çevir">⟲</button>
+          </div>
+
+          <div class="card-back">
+            <div class="teleks-header">// OPERATÖR TUTANAĞI //</div>
+            <div class="stat-readout">
+              <div class="stat-readout-row"><span>GÜÇ</span><span class="stat-readout-value" data-stat="power">—</span></div>
+              <div class="stat-readout-row"><span>GÜVEN</span><span class="stat-readout-value" data-stat="trust">—</span></div>
+              <div class="stat-readout-row"><span>AKIL</span><span class="stat-readout-value" data-stat="sanity">—</span></div>
+              <div class="stat-readout-row"><span>SİNYAL</span><span class="stat-readout-value" data-stat="signal">—</span></div>
+            </div>
+            <button class="flip-btn" type="button" aria-label="Ön yüze dön">⟲</button>
+          </div>
+        </div>
+      </div>
+      <div class="relationship-hud"></div>
     </div>
 
     <div class="ending-overlay">

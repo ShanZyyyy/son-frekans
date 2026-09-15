@@ -1896,6 +1896,79 @@ const DECK = [
     left: { label: "Hattı kapat, bir daha açma", effects: { signal: -16, sanity: 8 } },
     right: { label: "Adını sormaya devam et", effects: { signal: 12, sanity: -12 } },
   },
+  {
+    // Gizli kanal: herhangi bir Tuner oturumunda 94.2 MHz'e kilitlenerek keşfedilir (bkz. game.js: triggerBuseSecretChannel).
+    id: "defne_secret_channel",
+    phase: 2,
+    hidden: true,
+    image: "images/buse.jpg",
+    speaker: CAST.defne,
+    text: "“94.2'yi buldun demek. Bunu resmi telsizde kimseye söylemiyorum. Bu benim kendi hattım — istersen sadece ikimiz arasında kalsın.”",
+    left: { label: "Bu hattı unut, tehlikeli", effects: { signal: -6, rel: { defne: -8 } } },
+    right: { label: "Kalsın, sadece ikimiz arasında", effects: { signal: 6, trust: 4, rel: { defne: 14 } } },
+  },
+
+  /* ---------- Hafıza Mektupları (Memory Lore Engine) ----------
+     type:"memory_letter" olan kartlar swipe kullanmaz; game.js state.day eşiğine göre zorla gösterilir
+     (bkz. MEMORY_LETTER_DAYS/pendingMemoryLetterId). {{...}} işaretli bölümler sansürlüdür, yalnızca
+     Zihin Eşleme mini-oyunu çözülünce açılır (bkz. renderLetterText/startMemoryResonance). Dört mektup da
+     çözülünce kapı şifresinin haneleri birleşir ve memory_code_complete → true_escape_ending zinciri açılır. */
+  {
+    id: "memory_letter_1",
+    phase: 2,
+    hidden: true,
+    type: "memory_letter",
+    image: "images/archive_tape.jpg",
+    speaker: "Hafıza Parçası — Kendi El Yazın",
+    text: "“{{Şubat}}'ın başıydı, radyoyu ilk kez ben açtım... Sana kim olduğumu unutturacaklarını biliyordum, bu yüzden şifreyi burada bırakıyorum, sakla: birinci hane {{4}}. Sığınak-7'nin dışında hâlâ {{nefes alan biri}} var mıydı, hatırlamıyorum.”",
+  },
+  {
+    id: "memory_letter_2",
+    phase: 3,
+    hidden: true,
+    type: "memory_letter",
+    image: "images/archive_tape.jpg",
+    speaker: "Hafıza Parçası — Kendi El Yazın",
+    text: "“Askerler geldiğinde {{üç gün}} önceydi. Bana 'gönüllüsün' dediler ama ben hiçbir şeye gönüllü olmadım. Şifrenin ikinci hanesi {{7}}. Kapının arkasında {{ailem}} olabilir, olmayabilir de.”",
+  },
+  {
+    id: "memory_letter_3",
+    phase: 3,
+    hidden: true,
+    type: "memory_letter",
+    image: "images/archive_tape.jpg",
+    speaker: "Hafıza Parçası — Kendi El Yazın",
+    text: "“Fısıltı bana bir isim verdi: {{Gözcü-7}}. Ama bu istasyonun asıl adı bu değildi. Üçüncü hane: {{1}}. Bir şey daha var — kapıyı ben kilitlemedim, {{onlar kilitledi, beni içeride bırakmak için}}.”",
+  },
+  {
+    id: "memory_letter_4",
+    phase: 3,
+    hidden: true,
+    type: "memory_letter",
+    image: "images/archive_tape.jpg",
+    speaker: "Hafıza Parçası — Kendi El Yazın",
+    text: "“Son not, kendime: eğer bunu okuyorsan hâlâ hayattasın demektir. Dördüncü ve son hane: {{9}}. Diğer üçünü zaten biliyorsun, birleştir. {{Kapıyı aç. Dışarısı senin sandığın gibi değil ama gerçek.}} Buraya geri dönme.”",
+  },
+  {
+    id: "memory_code_complete",
+    phase: 3,
+    hidden: true,
+    image: "images/ali_kayra.jpg",
+    speaker: "Sen",
+    text: "Dört parça birleşti, kafanda net bir dizi beliriyor: 4-7-1-9. Ana kapının şifresi bu. Sığınağın en dip koridorunda, hiç açmadığın o kapı seni bekliyor.",
+    left: { label: "Hemen kapıya git", effects: {}, nextCardId: "true_escape_ending" },
+    right: { label: "Önce yayını bitir, sonra git", effects: { trust: 5 }, nextCardId: "true_escape_ending" },
+  },
+  {
+    id: "true_escape_ending",
+    phase: 3,
+    hidden: true,
+    image: "images/ali_kayra.jpg",
+    speaker: "Sen",
+    text: "Parmakların titriyor. 4-7-1-9. Kilit mekanizması eski ama çalışıyor — bir 'klik' sesi, sonra ağır bir gıcırtı. Kapı, ilk kez, açılıyor.",
+    left: { label: "Işığa doğru yürü", effects: {}, triggerEnding: "true_escape" },
+    right: { label: "Son kez telsize dön, kapat", effects: {}, triggerEnding: "true_escape" },
+  },
 ];
 
 /* Her oyunun başında gösterilen, senaryoyu etkilemeyen tanıtım kartı.

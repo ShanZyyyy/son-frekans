@@ -31,11 +31,12 @@ html, body {
 
 .screen {
   position: relative;
-  width: 100vw; height: 100vh; min-height: 560px;
+  width: 100vw; height: 100vh; height: 100dvh; min-height: 480px;
   background:
     radial-gradient(ellipse 900px 700px at 50% 38%, #10161b 0%, #0a0d10 55%, #050708 100%);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 20px 16px;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+           max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
   overscroll-behavior: none;
   touch-action: none;
   transition: filter 0.9s ease;
@@ -118,7 +119,7 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
 
 /* ---------- HUD ---------- */
 .hud-top {
-  position: absolute; top: 20px; left: 0; right: 0;
+  position: absolute; top: max(14px, env(safe-area-inset-top)); left: 0; right: 0;
   display: flex; justify-content: space-between; padding: 0 clamp(16px, 5vw, 40px);
   font-size: 12px; letter-spacing: 1px; z-index: 60; color: #c7d0d4;
   font-variant-numeric: tabular-nums;
@@ -219,14 +220,19 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
 /* ---------- Card ---------- */
 .card-stage {
   position: relative; z-index: 55;
-  width: min(360px, 92vw); height: min(460px, 56vh); min-height: 380px;
+  width: min(400px, 92vw); height: min(580px, 64vh); min-height: 300px;
   display: flex; align-items: center; justify-content: center;
   touch-action: none;
+  perspective: 1000px;
+  -webkit-perspective: 1000px;
+}
+@media (max-height: 700px) {
+  .card-stage { height: min(480px, 54vh); min-height: 270px; }
 }
 
 .card {
   position: absolute; inset: 0;
-  background: linear-gradient(180deg, var(--bg-panel-raised) 0%, var(--bg-panel) 100%);
+  background: #0a0d10; /* 3D dönüş sırasında kenardan sızıntı olmasın diye koyu bir taban */
   border: 2px solid #3c464c;
   border-radius: 6px;
   box-shadow:
@@ -242,6 +248,65 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
 }
 .card:active { cursor: grabbing; }
 
+/* ---------- Kart Çevirme (Card Flip) ---------- */
+.card-flipper {
+  position: absolute; inset: 0; z-index: 2;
+  transform-style: preserve-3d; -webkit-transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1);
+}
+.card-flipper.flipped { transform: rotateY(180deg); }
+
+.card-front, .card-back {
+  position: absolute; inset: 0;
+  backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  display: flex; flex-direction: column;
+}
+.card-front { background: linear-gradient(180deg, var(--bg-panel-raised) 0%, var(--bg-panel) 100%); }
+.card-back {
+  transform: rotateY(180deg);
+  background:
+    repeating-linear-gradient(135deg, rgba(255,255,255,0.015) 0 2px, transparent 2px 5px),
+    linear-gradient(180deg, #1b2023 0%, #101315 100%);
+  align-items: center; justify-content: center;
+  gap: clamp(14px, 3vh, 22px);
+  padding: clamp(18px, 4vw, 26px) clamp(16px, 5vw, 24px);
+}
+
+.teleks-header {
+  font-family: var(--font-hud); font-size: 10px; letter-spacing: 3px; text-align: center;
+  color: var(--ink-dim); padding-bottom: 10px; width: 100%;
+  border-bottom: 1px dashed #333c40;
+}
+
+/* Kart arkası: gösterge barlarının vermediği tam sayısal okuma (flip'in asıl değeri) */
+.stat-readout { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.stat-readout-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-family: var(--font-hud); font-size: 12px; letter-spacing: 1.5px; color: var(--ink-dim);
+  border-bottom: 1px dotted #262e32; padding-bottom: 6px;
+}
+.stat-readout-value {
+  font-size: 15px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums;
+  text-shadow: var(--phosphor-glow);
+}
+
+.flip-btn {
+  position: absolute; bottom: 8px; right: 8px; z-index: 4;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(10,13,16,0.7); border: 1px solid var(--border); color: var(--ink-dim);
+  font-size: 14px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.flip-btn:hover { color: var(--accent-emergency); border-color: var(--accent-emergency); }
+.flip-btn:focus-visible { outline: 2px solid var(--accent-emergency); outline-offset: 2px; }
+.card.no-flip .flip-btn { display: none; }
+
+.impact-hints { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; min-height: 18px; }
+.impact-tag {
+  font-family: var(--font-hud); font-size: 9px; letter-spacing: 0.5px;
+  padding: 1px 5px; border-radius: 3px; border: 1px solid currentColor;
+}
+
 /* Sığınak donanımı hissi: köşe braketleri */
 .card-corner {
   position: absolute; width: 14px; height: 14px; z-index: 3;
@@ -256,17 +321,20 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
   position: relative; z-index: 2;
   height: 100%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: clamp(10px, 2.2vh, 16px);
-  padding: clamp(18px, 4vw, 26px) clamp(16px, 5vw, 24px);
+  gap: clamp(7px, 1.6vh, 13px);
+  padding: clamp(14px, 3.2vw, 22px) clamp(14px, 4.5vw, 22px);
   overflow: hidden; /* metinler/portre kart sınırlarını asla aşmasın */
 }
 
 /* ---------- Reaktif damga (sürükleme geri bildirimi) ---------- */
+/* z-index: 50 — .card-flipper (2) içindeki opak .card-front/.card-back katmanlarının
+   ÜSTÜNDE kalması şart, yoksa sürükleme sırasında damga görünmez (kart "boş" kayar). */
 .stamp {
-  position: absolute; left: 50%; top: 42%; z-index: 1;
-  transform: translate(-50%, -50%) rotate(-9deg);
+  position: absolute; left: 50%; bottom: clamp(14px, 6%, 30px); z-index: 50;
+  transform: translateX(-50%) rotate(-9deg);
   font-family: var(--font-hud); font-weight: 700;
-  font-size: clamp(15px, 5.5vw, 21px); letter-spacing: 2px; white-space: nowrap;
+  font-size: clamp(13px, 4.6vw, 18px); letter-spacing: 1.5px; white-space: normal;
+  max-width: 82%; text-align: center; line-height: 1.3;
   padding: 8px 14px; border: 3px solid currentColor; border-radius: 4px;
   opacity: 0; pointer-events: none; mix-blend-mode: screen;
   text-shadow: 0 0 10px currentColor;
@@ -277,7 +345,7 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
   mix-blend-mode: multiply;
 }
 .stamp-left { color: #ff4b4b; }
-.stamp-right { color: #59d97a; transform: translate(-50%, -50%) rotate(7deg); }
+.stamp-right { color: #59d97a; transform: translateX(-50%) rotate(7deg); }
 .card.snap-back { transition: transform 0.35s cubic-bezier(.2,.8,.3,1.1); }
 .card.fly-out { transition: transform 0.42s ease-in, opacity 0.42s ease-in; opacity: 0; }
 .card.enter { animation: card-enter 0.32s ease-out; }
@@ -305,12 +373,32 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
 }
 
 .portrait-wrap {
-  width: clamp(96px, 26vw, 140px); height: clamp(96px, 26vw, 140px); border-radius: 50%;
+  width: clamp(92px, 24vw, 144px); height: clamp(92px, 24vw, 144px); border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #2a343a, #0c0f12 75%);
   border: 1px solid #333e43;
   display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative;
   box-shadow: inset 0 0 30px rgba(0,0,0,0.7);
   flex-shrink: 0;
+  --portrait-glow: rgba(232, 162, 58, 0.4);
+  --portrait-glow-strong: rgba(232, 162, 58, 0.7);
+  animation: portrait-pulse 2.8s ease-in-out infinite;
+}
+/* Nefes alan neon halka: yoğunluk --portrait-glow ile karaktere göre renklenir */
+@keyframes portrait-pulse {
+  0%, 100% { box-shadow: inset 0 0 30px rgba(0,0,0,0.7), 0 0 10px var(--portrait-glow); }
+  50% { box-shadow: inset 0 0 30px rgba(0,0,0,0.7), 0 0 20px var(--portrait-glow-strong); }
+}
+/* Basılı tutunca dışa doğru genişleyip silinen analog sonar/dalga halkası (bkz. spawnSonarWave).
+   .portrait-wrap'ın kendi overflow:hidden'ı halkayı kırpmasın diye .card-content'e kardeş olarak
+   eklenir; konum/boyut JS'te portrenin gerçek dikdörtgenine göre satır-içi ayarlanır. */
+.sonar-ring {
+  position: absolute;
+  border-radius: 50%; border: 2px solid currentColor; pointer-events: none;
+  animation: sonar-wave 0.85s ease-out forwards;
+}
+@keyframes sonar-wave {
+  0% { transform: scale(0.5); opacity: 0.75; }
+  100% { transform: scale(2.1); opacity: 0; }
 }
 .portrait-wrap::after {
   content: ''; position: absolute; inset: 0;
@@ -325,10 +413,11 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
   filter: grayscale(0.55) contrast(1.2) brightness(0.95) saturate(1.1);
 }
 
-/* Mert: sığınağın soğuk mavi/yeşil neonuyla sabit bir parıltı */
+/* Mert: sığınağın soğuk mavi/yeşil neonuyla nefes alan parıltı (box-shadow: bkz. portrait-pulse) */
 .portrait-wrap.avatar-mert {
   border-color: #4fd9c4;
-  box-shadow: inset 0 0 30px rgba(0,0,0,0.7), 0 0 16px rgba(79,217,196,0.55), 0 0 30px rgba(79,217,196,0.25);
+  --portrait-glow: rgba(79, 217, 196, 0.45);
+  --portrait-glow-strong: rgba(79, 217, 196, 0.85);
 }
 
 /* Buse: radyo frekansına uygun titreşen glitch/parazit çerçevesi */
@@ -395,15 +484,15 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
 }
 
 .choices {
-  width: 100%; display: flex; justify-content: space-between;
-  font-family: var(--font-hud); font-size: 11px; color: #8f9a9d; letter-spacing: 0.5px;
+  /* Statik seçim/etki-tahmini satırı kaldırıldı — kararlar artık yalnızca kartı sürükleyince
+     altta beliren reaktif damgalarla (bkz. .stamp) gösteriliyor. */
+  display: none !important;
 }
-.choices[hidden] { display: none; }
-.choice { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 46%; opacity: 0.55; transition: opacity 0.15s; }
+.choice { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 48%; opacity: 0.7; transition: opacity 0.15s; }
 .choice.active { opacity: 1; }
 .choice.left { color: #7fb2ff; }
 .choice.right { color: #ff9a7f; }
-.choice-label { font-size: 12px; }
+.choice-label { font-size: 12px; line-height: 1.4; }
 
 .drag-hint { position: absolute; top: 50%; font-size: 22px; opacity: 0; transition: opacity 0.1s; z-index: 5; }
 .drag-hint.left { left: -6px; color: #7fb2ff; }
@@ -411,8 +500,9 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
 
 /* ---------- Meters ---------- */
 .meters {
-  position: absolute; bottom: clamp(14px, 3vh, 26px); left: 0; right: 0; z-index: 60;
+  position: relative; z-index: 60; width: 100%;
   display: flex; justify-content: center; gap: clamp(10px, 3vw, 26px); padding: 0 12px;
+  margin-bottom: clamp(8px, 2vh, 16px);
 }
 .meter { position: relative; display: flex; flex-direction: column; align-items: center; width: clamp(64px, 18vw, 108px); }
 .meter .label { font-size: 9px; letter-spacing: 1px; color: var(--ink-dim); margin-bottom: 6px; display: flex; gap: 4px; align-items: center; white-space: nowrap; }
@@ -584,9 +674,71 @@ html.glitch-level-2 .m-signal .segment.lit, html.glitch-level-3 .m-signal .segme
 }
 .archive-popup-close:hover { border-color: var(--accent-emergency); color: var(--accent-emergency); }
 
-/* ---------- Tuning sırasında sürükleme ipuçlarını/damgaları gizle ---------- */
+/* ---------- Karakter Dosyası (Character Codex) ---------- */
+.codex-overlay {
+  position: absolute; inset: 0; z-index: 161; background: rgba(4,5,6,0.78);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+}
+.codex-overlay.show { opacity: 1; pointer-events: auto; }
+.codex-panel {
+  position: relative; isolation: isolate; width: min(360px, 90vw); max-height: 80vh; overflow-y: auto;
+  background: linear-gradient(180deg, var(--bg-panel-raised) 0%, var(--bg-panel) 100%);
+  border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  padding: 18px 20px 20px;
+}
+.codex-header {
+  font-family: var(--font-hud); font-size: 11px; letter-spacing: 1px; color: var(--crt-green);
+  margin-bottom: 14px;
+}
+.codex-list { display: flex; flex-direction: column; gap: 14px; margin-bottom: 16px; }
+.codex-card { display: flex; gap: 12px; padding-bottom: 14px; border-bottom: 1px dashed #333c40; }
+.codex-card:last-child { border-bottom: none; padding-bottom: 0; }
+.codex-portrait {
+  width: 52px; height: 52px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
+  border: 1px solid #333e43; filter: grayscale(0.5) contrast(1.15) brightness(0.95);
+}
+.codex-info { min-width: 0; }
+.codex-name {
+  font-family: var(--font-hud); font-size: 12px; letter-spacing: 1px; color: var(--ink);
+  margin-bottom: 4px;
+}
+.codex-bio {
+  font-family: var(--font-voice); font-size: 12.5px; line-height: 1.5; color: var(--ink-dim);
+  margin-bottom: 6px;
+}
+.codex-status {
+  font-family: var(--font-hud); font-size: 10.5px; letter-spacing: 0.5px; line-height: 1.5;
+}
+.codex-status .status-label { font-weight: 700; letter-spacing: 1px; }
+.codex-status.tier-strong .status-label { color: var(--crt-green); }
+.codex-status.tier-stable .status-label { color: var(--ink); }
+.codex-status.tier-tense .status-label { color: var(--accent-emergency); }
+.codex-status.tier-broken .status-label { color: #ff4b4b; }
+.codex-close {
+  width: 100%; font-family: var(--font-hud); font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+  background: transparent; color: var(--ink); border: 1px solid var(--border);
+  padding: 9px; border-radius: 3px; cursor: pointer;
+}
+.codex-close:hover { border-color: var(--accent-emergency); color: var(--accent-emergency); }
+
+.settings-codex-btn {
+  width: 100%; margin-top: 8px;
+  font-family: var(--font-hud); font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+  background: transparent; color: var(--ink); border: 1px solid var(--border);
+  padding: 9px; border-radius: 3px; cursor: pointer;
+}
+.settings-codex-btn:hover { border-color: var(--accent-emergency); color: var(--accent-emergency); }
+.settings-codex-btn:focus-visible { outline: 2px solid var(--accent-emergency); outline-offset: 2px; }
+
+/* ---------- Tuning / donanım arızası sırasında sürükleme ipuçlarını/damgaları gizle ---------- */
 .card-stage.tuning-active .drag-hint,
-.card-stage.tuning-active .stamp {
+.card-stage.tuning-active .stamp,
+.card-stage.fault-active .drag-hint,
+.card-stage.fault-active .stamp,
+.card-stage.memory-active .drag-hint,
+.card-stage.memory-active .stamp {
   display: none;
 }
 
@@ -655,13 +807,251 @@ html.glitch-level-2 .m-signal .segment.lit, html.glitch-level-3 .m-signal .segme
   100% { filter: brightness(1); }
 }
 
+/* ========================================================================
+   AKIL SAĞLIĞI ÇÖKÜŞ KATMANI (sanity < 35)
+   ======================================================================== */
+html.sanity-crisis .screen { animation: sanity-crt-flicker 2.6s infinite; }
+@keyframes sanity-crt-flicker {
+  0%, 95%, 100% { filter: brightness(1); }
+  96% { filter: brightness(1.35) contrast(1.1); }
+  97% { filter: brightness(0.65); }
+  98.5% { filter: brightness(1.15) saturate(1.25); }
+}
+/* Kromatik sapma yaklaşımı: metnin kırmızı/camgöbeği kanalları hafifçe ayrışır. */
+html.sanity-crisis .quote-text {
+  text-shadow: -1.5px 0 rgba(255,59,89,0.5), 1.5px 0 rgba(79,159,255,0.5), 0 0 4px rgba(0,255,180,0.3);
+}
+html.sanity-crisis .card { animation: sanity-card-ghost 3.4s infinite; }
+@keyframes sanity-card-ghost {
+  0%, 97%, 100% { transform: translate(0,0); }
+  98% { transform: translate(1px,0); }
+  99% { transform: translate(-1px,0.5px); }
+}
+.zalgo-word { color: #ff4b4b; text-shadow: 0 0 6px rgba(255,59,59,0.75); }
+
+/* Mert/Buse portresi — Akıl <20: birkaç saniyede bir tekinsiz negatif-flaş */
+.portrait-wrap.horror-flash #cardImage {
+  filter: invert(1) contrast(2) hue-rotate(180deg) !important;
+}
+.portrait-wrap.horror-flash {
+  box-shadow: inset 0 0 30px rgba(0,0,0,0.7), 0 0 22px rgba(255,59,59,0.7) !important;
+}
+
+/* ========================================================================
+   SIĞINAK DONANIM ARIZA DÖNGÜSÜ
+   ======================================================================== */
+.hardware-fault {
+  width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.hardware-fault[hidden] { display: none; }
+.fault-title {
+  font-family: var(--font-hud); font-weight: 700; font-size: clamp(15px, 4.4vw, 19px);
+  letter-spacing: 2px; padding: 4px 10px; border: 2px solid currentColor; border-radius: 3px;
+  animation: fault-blink 0.9s infinite;
+}
+.fault-title.fault-power { color: #ff4b4b; text-shadow: 0 0 10px rgba(255,59,59,0.6); }
+.fault-title.fault-oxygen { color: var(--accent-emergency); text-shadow: 0 0 10px rgba(232,162,58,0.6); }
+@keyframes fault-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.fault-desc {
+  font-family: var(--font-voice); font-size: clamp(13px, 3.6vw, 16px); text-align: center;
+  color: #cfd8db; text-shadow: var(--phosphor-glow); line-height: 1.5; padding: 0 4px;
+}
+.repair-row { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.repair-btn {
+  width: 100%; font-family: var(--font-hud); font-size: 12px; letter-spacing: 1.5px;
+  background: rgba(18,24,28,0.7); color: var(--ink); border: 1px solid var(--border);
+  padding: 10px; border-radius: 3px; cursor: pointer; user-select: none; touch-action: none;
+  position: relative; overflow: hidden;
+}
+.repair-btn.holding { color: var(--crt-green); border-color: var(--crt-green); }
+.repair-fill-track {
+  width: 100%; height: 5px; background: #1a2024; border-radius: 2px; overflow: hidden;
+  border: 1px solid #262e32;
+}
+.repair-fill {
+  height: 100%; width: 0%; background: var(--crt-green); box-shadow: 0 0 8px var(--crt-green);
+  border-radius: 2px; transition: width 0.05s linear;
+}
+.repair-status {
+  font-family: var(--font-hud); font-size: 10px; letter-spacing: 1px; color: var(--ink-dim);
+}
+
+/* ========================================================================
+   BUSE CANLI TELSİZ FREKANSI — 94.2 MHz GİZLİ KANAL BANNER'I
+   ======================================================================== */
+.buse-secret-banner {
+  position: absolute; left: 50%; top: 50%; z-index: 51;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-hud); font-weight: 700; letter-spacing: 2px;
+  font-size: clamp(13px, 4.4vw, 17px); text-align: center; white-space: nowrap;
+  color: #9b5fe0; text-shadow: 0 0 14px rgba(155,95,224,0.85);
+  padding: 10px 16px; border: 2px solid #9b5fe0; border-radius: 4px;
+  background: rgba(8,6,12,0.75);
+  opacity: 0; pointer-events: none;
+  animation: buse-banner-glitch 0.5s steps(3) infinite;
+}
+.buse-secret-banner.show { opacity: 1; }
+@keyframes buse-banner-glitch {
+  0%, 100% { transform: translate(-50%, -50%); }
+  33% { transform: translate(calc(-50% + 2px), -50%); }
+  66% { transform: translate(calc(-50% - 2px), -50%); }
+}
+
+/* ========================================================================
+   HAFIZA MEKTUPLARI & ZİHİN EŞLEME (Memory Lore Engine)
+   ======================================================================== */
+/* Mektup kartı ekrandayken normal arayüz (HUD/başlık) geri planda kararır. */
+html.memory-mode .hud-top,
+html.memory-mode .meters,
+html.memory-mode .title-block {
+  opacity: 0.25; filter: blur(0.5px);
+  transition: opacity 0.4s ease, filter 0.4s ease;
+}
+
+.memory-letter {
+  width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.memory-letter[hidden] { display: none; }
+.memory-letter-text {
+  width: 100%; font-family: var(--font-voice); font-size: clamp(13px, 3.6vw, 15px); line-height: 1.6;
+  color: #cfd8db; text-shadow: var(--phosphor-glow); text-align: center;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+  border: 1px dashed #333c40; border-radius: 3px; padding: 12px 10px;
+}
+.redacted {
+  display: inline-block; background: #0a0a0a; color: #0a0a0a; border-radius: 2px;
+  padding: 0 3px; user-select: none;
+}
+.redacted.revealed {
+  background: transparent; color: var(--crt-green); text-shadow: 0 0 8px rgba(62,242,160,0.6);
+  animation: redacted-reveal 0.6s ease-out;
+}
+@keyframes redacted-reveal {
+  0% { filter: brightness(3) blur(2px); opacity: 0.3; }
+  100% { filter: none; opacity: 1; }
+}
+.memory-focus-btn, .memory-continue-btn {
+  width: 100%; font-family: var(--font-hud); font-size: 12px; letter-spacing: 1.5px;
+  background: rgba(18,24,28,0.7); color: var(--crt-green); border: 1px solid var(--crt-green);
+  padding: 10px; border-radius: 3px; cursor: pointer;
+}
+.memory-focus-btn:hover, .memory-continue-btn:hover { background: rgba(62,242,160,0.1); }
+.memory-continue-btn[hidden] { display: none; }
+
+.memory-resonance {
+  width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.memory-resonance[hidden] { display: none; }
+.memory-resonance-label {
+  font-family: var(--font-hud); font-size: 10px; letter-spacing: 2px; color: var(--ink-dim);
+}
+.memory-scope {
+  width: 100%; height: clamp(56px, 14vh, 80px);
+  background: #060a08; border: 1px solid var(--border); border-radius: 4px;
+}
+.memory-wave-ref { fill: none; stroke: rgba(62,242,160,0.35); stroke-width: 2; }
+.memory-wave-player { fill: none; stroke: #9b5fe0; stroke-width: 2; filter: drop-shadow(0 0 3px rgba(155,95,224,0.7)); }
+.memory-slider {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--crt-green) 0%, var(--crt-green) var(--fill, 50%), #1a2024 var(--fill, 50%), #1a2024 100%);
+  border: 1px solid #262e32; outline: none; cursor: pointer;
+}
+.memory-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #d6ffe9, var(--crt-green) 70%);
+  border: 1px solid #1f5c40; box-shadow: 0 0 6px rgba(62,242,160,0.7);
+}
+.memory-slider::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%; border: 1px solid #1f5c40;
+  background: radial-gradient(circle at 35% 30%, #d6ffe9, var(--crt-green) 70%);
+}
+.memory-slider::-moz-range-track { background: transparent; }
+.memory-resonance-status {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-hud); font-size: 11px; letter-spacing: 1.5px; color: var(--ink-dim);
+}
+.memory-led {
+  width: 10px; height: 10px; border-radius: 50%; background: #2a3a30; transition: background 0.15s, box-shadow 0.15s;
+}
+.memory-led.tuned { background: var(--crt-green); box-shadow: 0 0 10px var(--crt-green); animation: tuner-led-pulse 0.6s ease-in-out infinite; }
+.memory-lock-bar {
+  width: 100%; height: 4px; background: #1a2024; border-radius: 2px; overflow: hidden; border: 1px solid #262e32;
+}
+.memory-lock-fill { height: 100%; width: 0%; background: var(--crt-green); border-radius: 2px; transition: width 0.08s linear; }
+
+/* ========================================================================
+   BANT ARŞİVİ — Kaset Oynatıcı (Tape Vault)
+   ======================================================================== */
+.archive-popup-list li.playable { cursor: pointer; color: var(--ink); }
+.archive-popup-list li.playable:hover { color: var(--crt-green); }
+.archive-popup-list li.playable .mark { color: var(--crt-green); }
+
+.tape-player {
+  margin-top: 4px; padding-top: 14px; border-top: 1px dashed #333c40;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.tape-player[hidden] { display: none; }
+.tape-reel-row { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.tape-reel {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid #3c464c; background: radial-gradient(circle at 40% 35%, #23292d, #0c0f12 75%);
+  position: relative;
+}
+.tape-reel::after {
+  content: ''; position: absolute; inset: 8px; border-radius: 50%;
+  background: repeating-conic-gradient(#3c464c 0deg 15deg, transparent 15deg 30deg);
+}
+.tape-player.playing .tape-reel { animation: tape-spin 1.1s linear infinite; }
+@keyframes tape-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.tape-player-title {
+  font-family: var(--font-hud); font-size: 11px; letter-spacing: 1.5px; color: var(--crt-green);
+  text-align: center;
+}
+.tape-transcript {
+  font-family: var(--font-voice); font-size: 13px; line-height: 1.6; color: #cfd8db;
+  text-shadow: var(--phosphor-glow); text-align: center; min-height: 60px; padding: 0 6px;
+}
+.tape-transcript .cursor-blink { animation: blink 0.7s infinite; }
+.tape-player-close {
+  width: 100%; font-family: var(--font-hud); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+  background: transparent; color: var(--ink-dim); border: 1px solid var(--border);
+  padding: 7px; border-radius: 3px; cursor: pointer;
+}
+.tape-player-close:hover { border-color: var(--accent-emergency); color: var(--accent-emergency); }
+
+/* ========================================================================
+   TEPKİSEL DÜZEN — dosyanın sonunda, kütlenin bütün temel kurallarından SONRA
+   tanımlanıyor. Aynı özgüllükteki kurallarda kaynak sırası kazanır; bu blok
+   daha önce dosyanın BAŞINDA yaşıyordu ve aşağıdaki .portrait-wrap/.card-content/
+   .meters gibi temel kurallar dosyada ondan SONRA geldiği için sessizce hiç
+   uygulanmıyordu. Küçük ekran/kısa görünüm ayarları artık kesin burada kalmalı.
+   ======================================================================== */
+@media (max-width: 420px), (max-height: 700px) {
+  .hud-top { font-size: 10.5px; padding: 0 max(12px, env(safe-area-inset-left)) 0 max(12px, env(safe-area-inset-right)); }
+  .settings-btn { padding: 3px 6px; font-size: 9px; }
+  .meters { gap: clamp(6px, 2.4vw, 16px); }
+  .meter { width: clamp(56px, 17vw, 100px); }
+  .title-block { margin-bottom: 8px; }
+}
+@media (max-height: 700px) {
+  .portrait-wrap { width: clamp(56px, 14vh, 90px) !important; height: clamp(56px, 14vh, 90px) !important; }
+  .card-content { gap: clamp(4px, 1vh, 8px); padding: clamp(8px, 2.2vw, 14px) clamp(12px, 4vw, 20px); }
+  .quote-text { font-size: clamp(12px, 3.2vw, 15px); line-height: 1.35; }
+  .who { font-size: 9px; }
+  .archive-line { font-size: 8px; margin-top: 2px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .grain, .rec .dot, html.glitch-level-1 .quote-text, html.glitch-level-2 .card,
   html.glitch-level-2 .quote-text, html.glitch-level-3 .card, html.glitch-level-3 .quote-text,
   html.glitch-level-3 .title, html.glitch-level-3 .hud-top, .m-signal .segment.lit, .portrait-wrap::after,
   .ping-dot, .card.resisting, .quote-text.hallucinating,
   .snowflake, .emergency-led .led-dot, .title-screen-heading, .freq-indicator, .title-screen.closing,
-  .tuner-led.tuned, .card.tune-fail, .portrait-wrap.avatar-buse, .segment-bar.critical .segment.lit {
+  .tuner-led.tuned, .card.tune-fail, .portrait-wrap.avatar-buse, .segment-bar.critical .segment.lit,
+  html.sanity-crisis .screen, html.sanity-crisis .card, .fault-title, .buse-secret-banner,
+  .tape-player.playing .tape-reel, .tape-transcript .cursor-blink,
+  .portrait-wrap, .sonar-ring, .redacted.revealed, .memory-led.tuned {
     animation: none !important;
   }
+  .card-flipper { transition: none !important; }
 }
