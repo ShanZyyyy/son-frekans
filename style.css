@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Share+Tech+Mono&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
 
 :root {
   --bg-void: #07090b;
@@ -12,10 +12,13 @@
   --meter-trust: #4f9fd9;
   --meter-sanity: #d94f4f;
   --meter-signal: #9b5fe0;
+  --meter-awake: #6fd97a;
   --crt-green: #3ef2a0;
   --phosphor-glow: 0 0 4px rgba(0, 255, 180, 0.4);
   --font-hud: 'Space Mono', 'Courier New', monospace;
-  --font-voice: 'Share Tech Mono', 'Courier New', monospace;
+  /* Share Tech Mono, ş/İ/ğ için gerçek glif içermiyordu (dar bir yedek fonta düşüyordu) —
+     Space Mono Türkçe karakterleri tam destekliyor, bkz. document.fonts/canvas testleri. */
+  --font-voice: 'Space Mono', 'Courier New', monospace;
 }
 
 * { box-sizing: border-box; }
@@ -28,7 +31,6 @@ html, body {
   overscroll-behavior: none; /* mobilde pull-to-refresh / bounce'u engelle */
   touch-action: none;
 }
-
 .screen {
   position: relative;
   width: 100vw; height: 100vh; height: 100dvh; min-height: 480px;
@@ -40,6 +42,12 @@ html, body {
   overscroll-behavior: none;
   touch-action: none;
   transition: filter 0.9s ease;
+}
+
+/* Fareyle kayan ışık yansıması: monitörün camına vuran hafif bir parıltı hissi. */
+.screen-glare {
+  position: absolute; inset: 0; z-index: 45; pointer-events: none;
+  background: radial-gradient(circle at var(--glare-x, 50%) var(--glare-y, 30%), rgba(255,255,255,0.07), transparent 55%);
 }
 
 /* ---------- Gece Vardiyası: her 4 günde bir gündüz/gece döngüsü ---------- */
@@ -120,18 +128,28 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
 /* ---------- HUD ---------- */
 .hud-top {
   position: absolute; top: max(14px, env(safe-area-inset-top)); left: 0; right: 0;
-  display: flex; justify-content: space-between; padding: 0 clamp(16px, 5vw, 40px);
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+  row-gap: 4px; padding: 0 clamp(16px, 5vw, 40px);
   font-size: 12px; letter-spacing: 1px; z-index: 60; color: #c7d0d4;
   font-variant-numeric: tabular-nums;
 }
-.rec { display: flex; align-items: center; gap: 6px; color: #ff5959; }
+.rec { display: flex; align-items: center; gap: 6px; color: #ff5959; white-space: nowrap; }
 .rec-clock { color: #c46060; margin-left: 2px; }
 .rec .dot { width: 8px; height: 8px; border-radius: 50%; background: #ff2e2e; box-shadow: 0 0 8px #ff2e2e; animation: blink 1.1s infinite; }
 @keyframes blink { 0%,55%{opacity:1;} 56%,100%{opacity:0.15;} }
 
-.hud-right { display: flex; align-items: center; gap: 12px; }
+/* İnce üst şerit: sadece Saat / Gün / Kredi okuması — asıl göstergeler artık yan panellerde. */
+.hud-readouts {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center;
+  gap: clamp(8px, 3vw, 22px); row-gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.hud-readout { display: flex; align-items: baseline; gap: 5px; color: var(--crt-green); text-shadow: var(--phosphor-glow); white-space: nowrap; }
+.hud-readout-label { font-size: 9px; letter-spacing: 2px; color: var(--ink-dim); text-shadow: none; }
+.shift-clock, .hud-day, .hud-credits { font-size: 13px; letter-spacing: 1px; white-space: nowrap; }
+
 .settings-btn {
-  font-family: var(--font-hud); font-size: 10px; letter-spacing: 1px;
+  font-family: var(--font-hud); font-size: 10px; letter-spacing: 1px; white-space: nowrap;
   background: transparent; color: var(--ink-dim); border: 1px solid var(--border);
   padding: 3px 8px; border-radius: 2px; cursor: pointer;
 }
@@ -323,6 +341,9 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: clamp(7px, 1.6vh, 13px);
   padding: clamp(14px, 3.2vw, 22px) clamp(14px, 4.5vw, 22px);
+  /* Alt kısımda sürükleme damgasına (bkz. .stamp) sabit bir boş bölge ayrılır — böylece uzun
+     kart metni + uzun seçim etiketi bir araya geldiğinde bile ikisi asla çakışmaz. */
+  padding-bottom: clamp(46px, 13vh, 64px);
   overflow: hidden; /* metinler/portre kart sınırlarını asla aşmasın */
 }
 
@@ -330,14 +351,14 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
 /* z-index: 50 — .card-flipper (2) içindeki opak .card-front/.card-back katmanlarının
    ÜSTÜNDE kalması şart, yoksa sürükleme sırasında damga görünmez (kart "boş" kayar). */
 .stamp {
-  position: absolute; left: 50%; bottom: clamp(14px, 6%, 30px); z-index: 50;
-  transform: translateX(-50%) rotate(-9deg);
+  position: absolute; left: 50%; bottom: clamp(6px, 2.5%, 14px); z-index: 50;
+  transform: translateX(-50%);
   font-family: var(--font-hud); font-weight: 700;
-  font-size: clamp(13px, 4.6vw, 18px); letter-spacing: 1.5px; white-space: normal;
-  max-width: 82%; text-align: center; line-height: 1.3;
-  padding: 8px 14px; border: 3px solid currentColor; border-radius: 4px;
+  font-size: clamp(10px, 3.2vw, 13px); letter-spacing: 1px; white-space: normal;
+  max-width: 76%; text-align: center; line-height: 1.25;
+  padding: 5px 10px; border: 2px solid currentColor; border-radius: 4px;
   opacity: 0; pointer-events: none; mix-blend-mode: screen;
-  text-shadow: 0 0 10px currentColor;
+  text-shadow: 0 0 8px currentColor;
 }
 .stamp::after {
   content: ''; position: absolute; inset: -3px; border-radius: 4px;
@@ -345,7 +366,7 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
   mix-blend-mode: multiply;
 }
 .stamp-left { color: #ff4b4b; }
-.stamp-right { color: #59d97a; transform: translateX(-50%) rotate(7deg); }
+.stamp-right { color: #59d97a; transform: translateX(-50%); }
 .card.snap-back { transition: transform 0.35s cubic-bezier(.2,.8,.3,1.1); }
 .card.fly-out { transition: transform 0.42s ease-in, opacity 0.42s ease-in; opacity: 0; }
 .card.enter { animation: card-enter 0.32s ease-out; }
@@ -498,13 +519,25 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
 .drag-hint.left { left: -6px; color: #7fb2ff; }
 .drag-hint.right { right: -6px; color: #ff9a7f; }
 
-/* ---------- Meters ---------- */
-.meters {
-  position: relative; z-index: 60; width: 100%;
-  display: flex; justify-content: center; gap: clamp(10px, 3vw, 26px); padding: 0 12px;
-  margin-bottom: clamp(8px, 2vh, 16px);
+/* ---------- Oyun Alanı: Sol/Sağ Gösterge Panelleri + Merkez Kart (Askeri Terminal Düzeni) ---------- */
+.play-area {
+  position: relative; z-index: 55; width: 100%; max-width: 920px; margin: 0 auto;
+  display: flex; flex-direction: row; align-items: center; justify-content: center;
+  gap: clamp(14px, 4vw, 40px);
 }
-.meter { position: relative; display: flex; flex-direction: column; align-items: center; width: clamp(64px, 18vw, 108px); }
+.center-column { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+.side-panel {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: clamp(16px, 3.5vh, 34px);
+  width: clamp(72px, 10vw, 104px);
+  flex-shrink: 0;
+  padding: clamp(10px, 2vh, 18px) 0;
+}
+.side-panel-left { border-right: 1px solid var(--border); }
+.side-panel-right { border-left: 1px solid var(--border); }
+
+/* ---------- Meters ---------- */
+.meter { position: relative; display: flex; flex-direction: column; align-items: center; width: 100%; }
 .meter .label { font-size: 9px; letter-spacing: 1px; color: var(--ink-dim); margin-bottom: 6px; display: flex; gap: 4px; align-items: center; white-space: nowrap; }
 .ping-dot {
   position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
@@ -525,6 +558,7 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
 .m-trust .segment.lit { background: var(--meter-trust); box-shadow: 0 0 5px var(--meter-trust); border-color: transparent; }
 .m-sanity .segment.lit { background: var(--meter-sanity); box-shadow: 0 0 5px var(--meter-sanity); border-color: transparent; }
 .m-signal .segment.lit { background: var(--meter-signal); box-shadow: 0 0 5px var(--meter-signal); border-color: transparent; }
+.m-awake .segment.lit { background: var(--meter-awake); box-shadow: 0 0 5px var(--meter-awake); border-color: transparent; }
 
 /* Kritik seviye (<20): ilgili gösterge kırmızıya döner ve aralıklı yanıp söner */
 .segment-bar.critical .segment.lit {
@@ -553,6 +587,78 @@ html.glitch-level-2 .m-signal .segment.lit, html.glitch-level-3 .m-signal .segme
 }
 .restart-btn:hover { background: rgba(232,162,58,0.1); }
 .restart-btn:focus-visible { outline: 2px solid var(--accent-emergency); outline-offset: 2px; }
+
+/* ========================================================================
+   SONLARA ÖZEL İMZA ANİMASYONLARI — her BANT SONU'nun kendi görsel vuruşu.
+   Sınıf triggerEnding() içinde .show ile AYNI ANDA eklenir, restart() içinde temizlenir.
+   ======================================================================== */
+.ending-overlay.sig-power_zero .ending-title,
+.ending-overlay.sig-power_zero .ending-body,
+.ending-overlay.sig-power_zero .ending-stats,
+.ending-overlay.sig-power_zero .restart-btn {
+  animation: sig-slow-reveal 2.6s ease-out both;
+}
+@keyframes sig-slow-reveal { 0%, 35% { opacity: 0; } 100% { opacity: 1; } }
+
+.ending-overlay.sig-power_max { animation: sig-white-flash 0.7s ease-out both; }
+@keyframes sig-white-flash {
+  0% { background: #fff; }
+  12% { background: #fff; }
+  45% { background: #201a1a; }
+  100% { background: #000; }
+}
+
+.ending-overlay.sig-trust_zero { position: relative; }
+.ending-overlay.sig-trust_zero::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 3px);
+  animation: sig-static-flicker 0.2s steps(2) infinite;
+}
+@keyframes sig-static-flicker { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.1; } }
+
+.ending-overlay.sig-trust_max { animation: sig-violent-shake 0.55s cubic-bezier(.36,.07,.19,.97) both; }
+@keyframes sig-violent-shake {
+  0% { transform: translate(0,0); background: #3a0a0a; }
+  20% { transform: translate(-10px, 6px); }
+  40% { transform: translate(8px, -5px); }
+  60% { transform: translate(-6px, 4px); background: #1a0303; }
+  80% { transform: translate(4px, -2px); }
+  100% { transform: translate(0,0); background: #000; }
+}
+
+.ending-overlay.sig-sanity_zero .ending-body { animation: sig-text-scramble 1.1s steps(6) both; }
+@keyframes sig-text-scramble {
+  0% { filter: blur(2px); transform: skewX(6deg); opacity: 0.3; letter-spacing: 4px; }
+  50% { filter: blur(1px); transform: skewX(-3deg); letter-spacing: 1px; }
+  100% { filter: none; transform: skewX(0deg); opacity: 1; letter-spacing: normal; }
+}
+
+.ending-overlay.sig-sanity_max { animation: sig-desaturate 3s ease-in both; }
+@keyframes sig-desaturate { from { filter: grayscale(0) brightness(1); } to { filter: grayscale(1) brightness(0.82); } }
+
+.ending-overlay.sig-signal_zero .ending-title,
+.ending-overlay.sig-signal_zero .ending-body,
+.ending-overlay.sig-signal_zero .ending-stats {
+  animation: sig-long-fade 3.2s ease-in both;
+}
+@keyframes sig-long-fade { 0%, 30% { opacity: 0; } 100% { opacity: 1; } }
+
+.ending-overlay.sig-signal_max { animation: sig-resonance-pulse 1.5s ease-in-out both; }
+@keyframes sig-resonance-pulse {
+  0% { filter: hue-rotate(0deg) brightness(1); background: #000; }
+  30% { filter: hue-rotate(70deg) brightness(1.4); background: #1a0f2e; }
+  60% { filter: hue-rotate(-40deg) brightness(1.15); background: #120a1f; }
+  100% { filter: hue-rotate(0deg) brightness(1); background: #0c0716; }
+}
+
+.ending-overlay.sig-true_escape { animation: sig-warm-light 2.2s ease-out both; }
+@keyframes sig-warm-light {
+  0% { background: #fff8e8; }
+  100% { background: #06110a; }
+}
+.ending-overlay.sig-true_escape .ending-title { color: var(--crt-green); }
+.ending-overlay.sig-true_escape .restart-btn { color: var(--crt-green); border-color: var(--crt-green); }
+.ending-overlay.sig-true_escape .restart-btn:hover { background: rgba(62,242,160,0.1); }
 
 /* ---------- Ana Menü (Title Screen) ---------- */
 .title-screen {
@@ -902,7 +1008,7 @@ html.sanity-crisis .card { animation: sanity-card-ghost 3.4s infinite; }
    ======================================================================== */
 /* Mektup kartı ekrandayken normal arayüz (HUD/başlık) geri planda kararır. */
 html.memory-mode .hud-top,
-html.memory-mode .meters,
+html.memory-mode .side-panel,
 html.memory-mode .title-block {
   opacity: 0.25; filter: blur(0.5px);
   transition: opacity 0.4s ease, filter 0.4s ease;
@@ -1029,17 +1135,225 @@ html.memory-mode .title-block {
 @media (max-width: 420px), (max-height: 700px) {
   .hud-top { font-size: 10.5px; padding: 0 max(12px, env(safe-area-inset-left)) 0 max(12px, env(safe-area-inset-right)); }
   .settings-btn { padding: 3px 6px; font-size: 9px; }
-  .meters { gap: clamp(6px, 2.4vw, 16px); }
-  .meter { width: clamp(56px, 17vw, 100px); }
+  .shift-clock, .hud-day, .hud-credits { font-size: 11px; }
+  .hud-readout-label { font-size: 8px; }
+  .hud-readouts { gap: clamp(6px, 3vw, 14px); }
   .title-block { margin-bottom: 8px; }
+}
+/* Yan panellerin kart yanına sığmadığı dar ekranlarda: göstergeler kartın üstüne/altına
+   yatay iki şerit halinde döner (bkz. play-area/side-panel — BÖLÜM 1: Askeri Terminal HUD). */
+@media (max-width: 720px) {
+  .play-area { flex-direction: column; max-width: 100%; gap: clamp(6px, 1.6vh, 14px); }
+  .side-panel {
+    flex-direction: row; flex-wrap: wrap; justify-content: center;
+    width: 100%; gap: clamp(6px, 2.4vw, 16px); padding: 0; border: none;
+  }
+  .side-panel .meter { width: clamp(50px, 16vw, 100px); }
 }
 @media (max-height: 700px) {
   .portrait-wrap { width: clamp(56px, 14vh, 90px) !important; height: clamp(56px, 14vh, 90px) !important; }
-  .card-content { gap: clamp(4px, 1vh, 8px); padding: clamp(8px, 2.2vw, 14px) clamp(12px, 4vw, 20px); }
+  .card-content {
+    gap: clamp(4px, 1vh, 8px);
+    padding: clamp(8px, 2.2vw, 14px) clamp(12px, 4vw, 20px);
+    /* Kısa görünümde de damga bölgesi ayrılmalı — genel kural burada shorthand ile ezilmesin. */
+    padding-bottom: clamp(36px, 12vh, 50px);
+  }
   .quote-text { font-size: clamp(12px, 3.2vw, 15px); line-height: 1.35; }
   .who { font-size: 9px; }
   .archive-line { font-size: 8px; margin-top: 2px; }
+  .stamp { font-size: clamp(9px, 2.8vw, 11px); padding: 4px 8px; bottom: clamp(4px, 2%, 10px); }
 }
+
+/* ========================================================================
+   İLLÜZYONUN KIRILMASI — Elektrik Kesintisi & El Feneri (power_outage)
+   ======================================================================== */
+.outage-overlay {
+  position: absolute; inset: 0; z-index: 200; background: #000;
+  opacity: 0; pointer-events: none; overflow: hidden;
+}
+.outage-overlay.show { opacity: 1; pointer-events: auto; }
+.outage-scene {
+  position: absolute; inset: 0; background: #1c2226; overflow: hidden;
+  transition: transform 0.6s ease, filter 0.6s ease;
+}
+.outage-photo {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; object-position: center 38%;
+  /* Dosya henüz eklenmediyse tarayıcının kırık-görsel simgesi net görünsün diye
+     arka plan burada koyu tutuluyor — sessizce "hiçbir şey yok" gibi görünmesin. */
+  background: #1c2226; color: transparent;
+}
+.outage-scene::after { content: ''; position: absolute; inset: 0; }
+/* Üç seçim sonucu da AYNI fotoğraf üzerinde salt CSS ile ayrışıyor — ayrı görsel üretmeye gerek yok. */
+.outage-scene.result-approach {
+  transform: scale(1.55);
+  transform-origin: 62% 48%; /* fotoğraftaki silüetin yaklaşık konumu */
+  filter: brightness(0.85) saturate(1.25) contrast(1.1);
+}
+.outage-scene.result-approach::after {
+  background: radial-gradient(circle at 62% 48%, rgba(200,20,20,0.3), transparent 60%);
+}
+.outage-scene.result-wait {
+  transform: scale(1.05);
+  filter: brightness(0.4) saturate(0.65) contrast(1.05);
+}
+.outage-scene.result-run {
+  filter: brightness(1.1) blur(2px);
+  animation: outage-run-shake 0.45s steps(2) infinite;
+}
+@keyframes outage-run-shake {
+  0%, 100% { transform: translate(0, 0) scale(1.08); }
+  25% { transform: translate(-10px, 5px) scale(1.08) rotate(-1deg); }
+  50% { transform: translate(8px, -6px) scale(1.08) rotate(1deg); }
+  75% { transform: translate(-5px, 4px) scale(1.08); }
+}
+.outage-darkness {
+  position: absolute; inset: 0;
+  background: radial-gradient(circle 150px at var(--mx, 50%) var(--my, 50%), transparent 0%, rgba(0,0,0,0.7) 55%, #000 88%);
+}
+.outage-choices {
+  position: absolute; bottom: 10%; left: 50%; transform: translateX(-50%); z-index: 2;
+  display: flex; flex-direction: column; align-items: center; gap: 10px; width: min(320px, 84vw);
+}
+.outage-choices[hidden] { display: none; }
+.outage-choice {
+  width: 100%; font-family: var(--font-hud); font-size: 12px; letter-spacing: 1.5px;
+  background: rgba(10,10,12,0.85); color: #ff4b4b; border: 1px solid #ff4b4b; border-radius: 3px;
+  padding: 11px 14px; cursor: pointer; animation: outage-choice-pulse 1.4s ease-in-out infinite;
+}
+.outage-choice:hover { background: rgba(255,75,75,0.15); }
+.outage-choice:focus-visible { outline: 2px solid #ff4b4b; outline-offset: 2px; }
+@keyframes outage-choice-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(255,75,75,0.3); }
+  50% { box-shadow: 0 0 14px rgba(255,75,75,0.75); }
+}
+@keyframes outage-flicker-out {
+  0% { opacity: 1; } 8% { opacity: 0.15; } 16% { opacity: 1; } 28% { opacity: 0.1; }
+  42% { opacity: 0.85; } 56% { opacity: 0.15; } 70% { opacity: 0.9; } 100% { opacity: 0; }
+}
+.outage-overlay.flicker-out { animation: outage-flicker-out 0.9s steps(2) forwards; pointer-events: none; }
+
+/* ========================================================================
+   ZAMAN DÖNGÜSÜ & KANTİN AĞI — vardiya saati, uyanıklık ve ekonomi sistemi
+   ======================================================================== */
+html.drowsy .screen { animation: drowsy-pulse 3.6s ease-in-out infinite; }
+@keyframes drowsy-pulse {
+  0%, 100% { filter: brightness(1) saturate(1); }
+  50% { filter: brightness(0.5) saturate(0.65); }
+}
+
+.card-stage.beer-blur .card { filter: blur(3px); transition: filter 0.5s ease; }
+
+.canteen-btn {
+  position: absolute; z-index: 97; /* Bülten (94) üstünde kalır, BÖLÜM 3: bültendeyken de alışveriş yapılabilsin */
+  right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom));
+  font-family: var(--font-hud); font-size: 10px; letter-spacing: 1.5px;
+  background: rgba(10,10,12,0.7); color: var(--meter-awake); border: 1px solid var(--meter-awake);
+  padding: 7px 10px; border-radius: 3px; cursor: pointer;
+}
+.canteen-btn:hover { background: rgba(111,217,122,0.12); }
+.canteen-btn:focus-visible { outline: 2px solid var(--meter-awake); outline-offset: 2px; }
+
+.canteen-overlay {
+  position: absolute; inset: 0; z-index: 98; background: rgba(4, 5, 6, 0.72);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+}
+.canteen-overlay.show { opacity: 1; pointer-events: auto; }
+.canteen-panel {
+  position: relative; width: min(340px, 88vw);
+  isolation: isolate;
+  background: linear-gradient(180deg, var(--bg-panel-raised) 0%, var(--bg-panel) 100%);
+  border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(111,217,122,0.06);
+  padding: 18px 20px 20px;
+}
+.canteen-header {
+  display: flex; align-items: center; justify-content: space-between;
+  font-family: var(--font-hud); font-size: 11px; letter-spacing: 2px; color: var(--meter-awake);
+  margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.canteen-close { background: transparent; border: none; color: var(--ink-dim); font-size: 14px; cursor: pointer; line-height: 1; }
+.canteen-close:hover { color: var(--meter-awake); }
+.canteen-credits-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-family: var(--font-hud); font-size: 11px; letter-spacing: 1px; color: var(--ink-dim);
+  margin-bottom: 16px;
+}
+.canteen-credits { color: var(--accent-emergency); font-size: 13px; font-variant-numeric: tabular-nums; }
+.canteen-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 0; border-top: 1px solid var(--border);
+}
+.canteen-item:first-of-type { border-top: none; }
+.canteen-item-name { font-family: var(--font-hud); font-size: 11px; letter-spacing: 1.5px; color: var(--ink); margin-bottom: 4px; }
+.canteen-item-desc { font-family: var(--font-voice); font-size: 11px; color: var(--ink-dim); line-height: 1.4; max-width: 190px; }
+.canteen-buy-btn {
+  flex-shrink: 0; font-family: var(--font-hud); font-size: 11px; letter-spacing: 1px;
+  background: transparent; color: var(--meter-awake); border: 1px solid var(--meter-awake);
+  padding: 8px 10px; border-radius: 3px; cursor: pointer; white-space: nowrap;
+}
+.canteen-buy-btn:hover:not(:disabled) { background: rgba(111,217,122,0.12); }
+.canteen-buy-btn:focus-visible { outline: 2px solid var(--meter-awake); outline-offset: 2px; }
+.canteen-buy-btn:disabled { color: var(--ink-dim); border-color: var(--border); cursor: not-allowed; opacity: 0.6; }
+
+/* ---------- Gün Sonu Bülteni (Papers, Please tarzı) ---------- */
+.bulletin-overlay {
+  position: absolute; inset: 0; z-index: 94; background: rgba(0,0,0,0.88);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.5s ease;
+}
+.bulletin-overlay.show { opacity: 1; pointer-events: auto; }
+.bulletin-paper {
+  position: relative; width: min(360px, 88vw); max-height: 84vh; overflow-y: auto;
+  background:
+    radial-gradient(ellipse at 15% 20%, rgba(60,45,20,0.12), transparent 40%),
+    radial-gradient(ellipse at 85% 75%, rgba(60,45,20,0.10), transparent 45%),
+    linear-gradient(180deg, #ded4bd 0%, #d2c7ac 100%);
+  color: #2a2519;
+  border: 1px solid #8a7c58;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.65), inset 0 0 40px rgba(60,45,20,0.18);
+  padding: 26px 22px 22px;
+  font-family: var(--font-voice);
+  text-align: center;
+  animation: bulletin-drop-in 0.5s ease-out both;
+}
+@keyframes bulletin-drop-in {
+  from { transform: translateY(-14px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.bulletin-stamp {
+  position: absolute; top: 14px; right: 16px;
+  font-family: var(--font-hud); font-size: 10px; letter-spacing: 2px;
+  color: #a33; border: 2px solid #a33; border-radius: 4px;
+  padding: 3px 7px; transform: rotate(8deg); opacity: 0.75;
+}
+.bulletin-header {
+  font-family: var(--font-hud); font-size: 12px; letter-spacing: 2px;
+  color: #4a3f24; border-bottom: 1px dashed #8a7c58; padding-bottom: 10px; margin-bottom: 12px;
+}
+.bulletin-day-label {
+  font-family: var(--font-hud); font-size: 10px; letter-spacing: 1.5px; color: #6b5f3f;
+  margin-bottom: 16px;
+}
+.bulletin-headline {
+  font-family: var(--font-hud); font-size: clamp(13px, 3.6vw, 15px); font-weight: 700; letter-spacing: 1px;
+  color: #241f14; margin-bottom: 10px; text-transform: uppercase;
+}
+.bulletin-body {
+  font-size: 13px; line-height: 1.55; color: #3a3220; margin-bottom: 18px;
+}
+.bulletin-reward {
+  font-family: var(--font-hud); font-size: 11px; letter-spacing: 1.5px; color: #5c4a1e;
+  border-top: 1px dashed #8a7c58; padding-top: 12px; margin-bottom: 18px;
+}
+.bulletin-continue-btn {
+  width: 100%; font-family: var(--font-hud); font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+  background: #2a2519; color: #ded4bd; border: 1px solid #2a2519;
+  padding: 11px; border-radius: 2px; cursor: pointer;
+}
+.bulletin-continue-btn:hover { background: #43391f; }
+.bulletin-continue-btn:focus-visible { outline: 2px solid #a33; outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .grain, .rec .dot, html.glitch-level-1 .quote-text, html.glitch-level-2 .card,
@@ -1050,8 +1364,18 @@ html.memory-mode .title-block {
   .tuner-led.tuned, .card.tune-fail, .portrait-wrap.avatar-buse, .segment-bar.critical .segment.lit,
   html.sanity-crisis .screen, html.sanity-crisis .card, .fault-title, .buse-secret-banner,
   .tape-player.playing .tape-reel, .tape-transcript .cursor-blink,
-  .portrait-wrap, .sonar-ring, .redacted.revealed, .memory-led.tuned {
+  .portrait-wrap, .sonar-ring, .redacted.revealed, .memory-led.tuned,
+  .outage-choice, .outage-overlay.flicker-out, .outage-scene.result-run,
+  .ending-overlay.sig-power_zero .ending-title, .ending-overlay.sig-power_zero .ending-body,
+  .ending-overlay.sig-power_zero .ending-stats, .ending-overlay.sig-power_zero .restart-btn,
+  .ending-overlay.sig-power_max, .ending-overlay.sig-trust_zero::before, .ending-overlay.sig-trust_max,
+  .ending-overlay.sig-sanity_zero .ending-body, .ending-overlay.sig-sanity_max,
+  .ending-overlay.sig-signal_zero .ending-title, .ending-overlay.sig-signal_zero .ending-body,
+  .ending-overlay.sig-signal_zero .ending-stats, .ending-overlay.sig-signal_max,
+  .ending-overlay.sig-true_escape, html.drowsy .screen, .bulletin-paper {
     animation: none !important;
   }
   .card-flipper { transition: none !important; }
+  .screen { transition: filter 0.9s ease !important; transform: none !important; }
+  .card-stage.beer-blur .card { transition: none !important; }
 }

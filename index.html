@@ -67,10 +67,12 @@
 
     <div class="hud-top">
       <div class="rec"><span class="dot"></span> REC <span class="rec-clock">00:00:00</span></div>
-      <div class="hud-right">
-        <div class="hud-day">GÜN 1</div>
-        <button class="settings-btn" type="button" aria-label="Ayarlar" title="Sinyal Kontrol Ünitesi">[ AYARLAR ]</button>
+      <div class="hud-readouts">
+        <span class="hud-readout"><span class="hud-readout-label">SAAT</span><span class="shift-clock">00:00</span></span>
+        <span class="hud-readout"><span class="hud-readout-label">GÜN</span><span class="hud-day">1</span></span>
+        <span class="hud-readout"><span class="hud-readout-label">KREDİ</span><span class="hud-credits">0 Cr</span></span>
       </div>
+      <button class="settings-btn" type="button" aria-label="Ayarlar" title="Sinyal Kontrol Ünitesi">[ AYARLAR ]</button>
     </div>
 
     <div class="settings-overlay">
@@ -101,35 +103,32 @@
       </div>
     </div>
 
-    <div class="title-block">
-      <div class="title">SON FREKANS</div>
-      <div class="subtitle">BANT #001: Ali Kayra</div>
-    </div>
+    <div class="play-area">
+      <div class="side-panel side-panel-left">
+        <div class="meter m-fuel">
+          <span class="ping-dot"></span>
+          <div class="label">[ GÜÇ ]</div>
+          <div class="segment-bar"></div>
+        </div>
+        <div class="meter m-signal">
+          <span class="ping-dot"></span>
+          <div class="label">[ SİNYAL ]</div>
+          <div class="segment-bar"></div>
+        </div>
+        <div class="meter m-trust">
+          <span class="ping-dot"></span>
+          <div class="label">[ GÜVEN ]</div>
+          <div class="segment-bar"></div>
+        </div>
+      </div>
 
-    <div class="meters">
-      <div class="meter m-fuel">
-        <span class="ping-dot"></span>
-        <div class="label">[ GÜÇ ]</div>
-        <div class="segment-bar"></div>
-      </div>
-      <div class="meter m-trust">
-        <span class="ping-dot"></span>
-        <div class="label">[ GÜVEN ]</div>
-        <div class="segment-bar"></div>
-      </div>
-      <div class="meter m-sanity">
-        <span class="ping-dot"></span>
-        <div class="label">[ AKIL ]</div>
-        <div class="segment-bar"></div>
-      </div>
-      <div class="meter m-signal">
-        <span class="ping-dot"></span>
-        <div class="label">[ SİNYAL ]</div>
-        <div class="segment-bar"></div>
-      </div>
-    </div>
+      <div class="center-column">
+        <div class="title-block">
+          <div class="title">SON FREKANS</div>
+          <div class="subtitle">BANT #001: Ali Kayra</div>
+        </div>
 
-    <div class="card-stage">
+        <div class="card-stage">
       <span class="drag-hint left">◀</span>
       <span class="drag-hint right">▶</span>
       <div class="card">
@@ -217,12 +216,28 @@
               <div class="stat-readout-row"><span>GÜVEN</span><span class="stat-readout-value" data-stat="trust">—</span></div>
               <div class="stat-readout-row"><span>AKIL</span><span class="stat-readout-value" data-stat="sanity">—</span></div>
               <div class="stat-readout-row"><span>SİNYAL</span><span class="stat-readout-value" data-stat="signal">—</span></div>
+              <div class="stat-readout-row"><span>UYANIKLIK</span><span class="stat-readout-value" data-stat="awake">—</span></div>
             </div>
             <button class="flip-btn" type="button" aria-label="Ön yüze dön">⟲</button>
           </div>
         </div>
       </div>
       <div class="relationship-hud"></div>
+        </div>
+      </div>
+
+      <div class="side-panel side-panel-right">
+        <div class="meter m-sanity">
+          <span class="ping-dot"></span>
+          <div class="label">[ AKIL ]</div>
+          <div class="segment-bar"></div>
+        </div>
+        <div class="meter m-awake">
+          <span class="ping-dot"></span>
+          <div class="label">[ UYANIKLIK ]</div>
+          <div class="segment-bar"></div>
+        </div>
+      </div>
     </div>
 
     <div class="ending-overlay">
@@ -238,6 +253,60 @@
     <div class="grain"></div>
     <div class="vignette"></div>
     <div class="crt-curvature"></div>
+    <div class="screen-glare"></div>
+
+    <div class="outage-overlay">
+      <div class="outage-scene">
+        <img class="outage-photo" src="images/window_silhouette.jpg" alt="">
+      </div>
+      <div class="outage-darkness"></div>
+      <div class="outage-choices" hidden>
+        <button class="outage-choice" type="button" data-choice="approach">[ CAMA YAKLAŞ ]</button>
+        <button class="outage-choice" type="button" data-choice="wait">[ YERE ÇÖK &amp; BEKLE ]</button>
+        <button class="outage-choice" type="button" data-choice="run">[ ŞALTERE KÖRLEMESİNE KOŞ ]</button>
+      </div>
+    </div>
+
+    <button class="canteen-btn" type="button">[ KANTİN ]</button>
+
+    <div class="canteen-overlay">
+      <div class="canteen-panel">
+        <div class="canteen-header">
+          <span>KANTİN AĞI</span>
+          <button class="canteen-close" type="button" aria-label="Kapat">✕</button>
+        </div>
+        <div class="canteen-credits-row">
+          <span>BAKİYE</span>
+          <span class="canteen-credits">0 Cr</span>
+        </div>
+        <div class="canteen-item">
+          <div class="canteen-item-info">
+            <div class="canteen-item-name">FİLTRE KAHVE</div>
+            <div class="canteen-item-desc">Uyanıklığı tamamen doldurur.</div>
+          </div>
+          <button class="canteen-buy-btn buy-coffee-btn" type="button">[ 10 Cr ]</button>
+        </div>
+        <div class="canteen-item">
+          <div class="canteen-item-info">
+            <div class="canteen-item-name">SOĞUK BİRA</div>
+            <div class="canteen-item-desc">Akıl sağlığını doldurur, birkaç kart boyunca görüşü bulanıklaştırır.</div>
+          </div>
+          <button class="canteen-buy-btn buy-beer-btn" type="button">[ 15 Cr ]</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bulletin-overlay">
+      <div class="bulletin-paper">
+        <div class="bulletin-stamp">GÖZCÜ-7</div>
+        <div class="bulletin-header">[ SİVİL SAVUNMA GÜNLÜK BÜLTENİ ]</div>
+        <div class="bulletin-day-label">VARDİYA TAMAMLANDI — GÜN <span class="bulletin-day-num">1</span></div>
+        <div class="bulletin-headline"></div>
+        <div class="bulletin-body"></div>
+        <div class="bulletin-reward"></div>
+        <button class="bulletin-continue-btn" type="button">[ YENİ VARDİYAYA BAŞLA ]</button>
+      </div>
+    </div>
   </div>
 
   <script src="deck.js"></script>

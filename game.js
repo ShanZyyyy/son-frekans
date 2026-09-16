@@ -32,6 +32,14 @@ const state = {
   memoryLettersFound: [], // çözülmüş memory_letter kart id'leri — 4'ü tamamlanınca true_escape zinciri açılır
   memory: null, // { letterId, targetPhase, lockStartedAt } — aktif Zihin Eşleme oturumu
   characterFates: {}, // { mert/defne: final kart id, selin: "good"|"bad", ceylan: "stayed"|"left" } — bu koşuda netleşen kaderler
+  outageActive: false, // Elektrik Kesintisi & El Feneri olayı sürüyor mu
+  outageRevealed: false, // fener camdaki silüetin üstüne gelip 3 seçenek açıldı mı
+  awakeness: 100, // Uyanıklık — 0-100, mevcut GÜÇ/GÜVEN/AKIL/SİNYAL göstergelerinin yanına eklenen 5. metrik
+  credits: 0, // Sığınak Kredisi (Cr) — vardiya sonunda kazanılır, Kantin Ağı'nda harcanır
+  shiftClock: 0, // 00:00'dan bu yana geçen dakika; 360 (06:00) olunca vardiya biter
+  shiftNumber: 1, // "VARDİYA TAMAMLANDI - GÜN X" ekranındaki sayaç — state.day'den bağımsız
+  beerBlurCardsRemaining: 0, // Soğuk Bira'nın yan etkisi: bu kadar kart boyunca ekran bulanık
+  bulletinActive: false, // Gün Sonu Bülteni açıkken kart girişi (klavye/sürükleme) kilitli
 };
 
 const els = {};
@@ -276,6 +284,11 @@ function saveGameProgress() {
     buseSecretFound: state.buseSecretFound,
     memoryLettersFound: state.memoryLettersFound,
     characterFates: state.characterFates,
+    awakeness: state.awakeness,
+    credits: state.credits,
+    shiftClock: state.shiftClock,
+    shiftNumber: state.shiftNumber,
+    beerBlurCardsRemaining: state.beerBlurCardsRemaining,
   };
   localStorage.setItem(SAVED_GAME_KEY, JSON.stringify(snapshot));
 }
@@ -309,6 +322,7 @@ const METER_SELECTORS = {
   trust: ".m-trust",
   sanity: ".m-sanity",
   signal: ".m-signal",
+  awake: ".m-awake",
 };
 
 /* ---------- Gecikmeli geri bildirim: ilişki skoruna göre varyant seçimi ---------- */
@@ -421,6 +435,21 @@ function spawnSonarWave() {
 function bindPortraitEvents() {
   // stopPropagation YOK: portreden başlayan bir sürükleme normal kart swipe'ını kesintiye uğratmamalı.
   els.portraitWrap.addEventListener("pointerdown", spawnSonarWave);
+}
+
+/* ---------- Masada Oturma Hissi: sürekli fare-paralaks eğilme + kayan cam parıltısı ---------- */
+const PARALLAX_MAX_TILT_DEG = 6;
+function bindParallaxTilt() {
+  if (prefersReducedMotion) return;
+  window.addEventListener("pointermove", (e) => {
+    const nx = e.clientX / window.innerWidth - 0.5; // -0.5..0.5
+    const ny = e.clientY / window.innerHeight - 0.5;
+    const rotY = nx * PARALLAX_MAX_TILT_DEG * 2;
+    const rotX = -ny * PARALLAX_MAX_TILT_DEG * 2;
+    els.screen.style.transform = `rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg)`;
+    els.screenGlare.style.setProperty("--glare-x", `${(nx + 0.5) * 100}%`);
+    els.screenGlare.style.setProperty("--glare-y", `${(ny + 0.5) * 100}%`);
+  });
 }
 
 /* Mert/Buse portresi: Akıl <20 iken birkaç saniyede bir anlık tekinsiz negatif-flaş. */
@@ -595,6 +624,7 @@ function onMemoryContinue() {
   els.cardStage.classList.remove("memory-active");
   state.day += 1;
   updateNightShift();
+  const shiftEnded = tickShiftClock();
   updateHUD();
   if (state.memoryLettersFound.length >= 4) {
     // Dört mektup da çözüldü (bu fonksiyon yalnızca bir mektup çözülünce çağrılır, dolayısıyla
@@ -604,6 +634,10 @@ function onMemoryContinue() {
   const endingKey = checkEnding();
   if (endingKey) {
     triggerEnding(endingKey);
+    return;
+  }
+  if (shiftEnded) {
+    triggerShiftComplete();
     return;
   }
   advanceToNextCard();
@@ -634,31 +668,36 @@ function renderCard(card, { animateIn = true } = {}) {
     state.currentTrueText = card.text;
   }
 
-  els.cardImage.src = card.image;
-  els.speaker.textContent = card.speaker;
+  els.cardImage.src = card.image || "images/station_cabin.jpg";
+  els.speaker.textContent = card.speaker || "";
   // memory_letter kartlarında ham metin {{...}} işaretleyicileri taşır — burada değil,
   // yalnızca renderLetterText ile .memory-letter-text içinde (sansürlü/açık) gösterilir.
-  els.quoteText.textContent = card.type === "memory_letter" ? "Eski bir kağıt parçası elinde titriyor." : state.currentTrueText;
+  // power_outage'da zaten opak kesinti katmanı her şeyi kaplar, ama arkada "undefined" da yazmasın.
+  els.quoteText.textContent =
+    card.type === "memory_letter" ? "Eski bir kağıt parçası elinde titriyor." :
+    card.type === "power_outage" ? "" :
+    state.currentTrueText;
   els.quoteText.classList.remove("hallucinating");
 
   updateRelationshipDisplay(card);
 
   const isTuneCard = card.type === "radio_tune";
   const isMemoryCard = card.type === "memory_letter";
-  els.choices.hidden = isTuneCard || isMemoryCard;
+  const isOutageCard = card.type === "power_outage";
+  els.choices.hidden = isTuneCard || isMemoryCard || isOutageCard;
   els.tuner.hidden = !isTuneCard;
   els.cardStage.classList.toggle("tuning-active", isTuneCard);
-  if (!isTuneCard && !isMemoryCard) {
+  if (!isTuneCard && !isMemoryCard && !isOutageCard) {
     els.leftLabel.textContent = card.left.label;
     els.rightLabel.textContent = card.right.label;
     renderImpactHints(els.impactLeft, card.left.effects);
     renderImpactHints(els.impactRight, card.right.effects);
   }
 
-  // Her yeni kart ön yüzle başlar; Tuner/Hafıza kartlarında çevirmenin bir anlamı yok
+  // Her yeni kart ön yüzle başlar; Tuner/Hafıza/Kesinti kartlarında çevirmenin bir anlamı yok
   // (arka yüzde seçenek olmadığından) — çevirme düğmeleri o kartlarda tamamen gizleniyor.
   els.cardFlipper.classList.remove("flipped");
-  els.card.classList.toggle("no-flip", isTuneCard || isMemoryCard);
+  els.card.classList.toggle("no-flip", isTuneCard || isMemoryCard || isOutageCard);
 
   // Bir önceki kartta arıza/gizli kanal/hafıza katmanı açık kalmış olabilir — yeni kartta sıfırla.
   els.hardwareFault.hidden = true;
@@ -710,6 +749,7 @@ function renderCard(card, { animateIn = true } = {}) {
   }
 
   if (isTuneCard) startTuning(card);
+  if (isOutageCard) startPowerOutage();
 }
 
 /* ---------- İnteraktif Telsiz Frekans Arama (Tuner Mini-Oyunu) ---------- */
@@ -829,6 +869,7 @@ function triggerBuseSecretChannel() {
 
   state.day += 1;
   updateNightShift();
+  const shiftEnded = tickShiftClock();
   updateHUD();
 
   const endingKey = checkEnding();
@@ -836,7 +877,11 @@ function triggerBuseSecretChannel() {
     triggerEnding(endingKey);
     return;
   }
-  state.forcedNextId = "defne_secret_channel";
+  state.forcedNextId = "defne_secret_channel"; // shiftEnded olsa bile forcedNextId korunur, kaybolmaz
+  if (shiftEnded) {
+    triggerShiftComplete();
+    return;
+  }
   setTimeout(() => advanceToNextCard(), 900);
 }
 
@@ -971,6 +1016,100 @@ function bindHardwareFaultEvents() {
   els.repairBtn.addEventListener("pointerleave", cancelRepairHold);
 }
 
+/* ========================================================================
+   İLLÜZYONUN KIRILMASI — Elektrik Kesintisi & El Feneri (type: "power_outage")
+   ======================================================================== */
+const OUTAGE_REVEAL_RADIUS_PX = 110;
+const OUTAGE_CHOICE_EFFECTS = {
+  approach: { sanity: -20, signal: 15 },
+  wait: { sanity: -5, power: -10 },
+  run: { power: 20 }, // sanity hasarı aşağıda ayrıca rastgele uygulanır
+};
+
+function startPowerOutage() {
+  state.outageActive = true;
+  state.outageRevealed = false;
+  els.card.classList.add("no-flip");
+  AudioEngine.playBreakerFlip();
+  els.outageOverlay.classList.remove("flicker-out");
+  els.outageScene.classList.remove("result-approach", "result-wait", "result-run");
+  els.outageChoices.hidden = true;
+  els.outageOverlay.classList.add("show");
+}
+
+// Tek gerçek fotoğrafta silüetin durduğu yaklaşık konum (bkz. .outage-scene.result-approach
+// transform-origin ile aynı nokta) — artık ayrı bir DOM öğesi yok, sabit yüzde kullanılıyor.
+const OUTAGE_SILHOUETTE_REGION = { xPercent: 0.62, yPercent: 0.48 };
+function onOutagePointerMove(e) {
+  const rect = els.outageOverlay.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  els.outageOverlay.style.setProperty("--mx", mx + "px");
+  els.outageOverlay.style.setProperty("--my", my + "px");
+  if (state.outageRevealed || !state.outageActive) return;
+  const silX = rect.width * OUTAGE_SILHOUETTE_REGION.xPercent;
+  const silY = rect.height * OUTAGE_SILHOUETTE_REGION.yPercent;
+  if (Math.hypot(mx - silX, my - silY) < OUTAGE_REVEAL_RADIUS_PX) {
+    state.outageRevealed = true;
+    els.outageChoices.hidden = false;
+    AudioEngine.playJumpScareSting();
+    vibrate([30, 40, 90]);
+  }
+}
+
+function playOutageFlickerBack(callback) {
+  if (prefersReducedMotion) {
+    els.outageOverlay.classList.remove("show");
+    callback();
+    return;
+  }
+  const onEnd = () => {
+    els.outageOverlay.removeEventListener("animationend", onEnd);
+    els.outageOverlay.classList.remove("show", "flicker-out");
+    callback();
+  };
+  els.outageOverlay.addEventListener("animationend", onEnd);
+  els.outageOverlay.classList.add("flicker-out");
+}
+
+function resolveOutageChoice(choiceKey) {
+  if (!state.outageActive) return;
+  state.outageActive = false;
+  const effects = { ...OUTAGE_CHOICE_EFFECTS[choiceKey] };
+  if (choiceKey === "run") effects.sanity = -(5 + Math.floor(Math.random() * 16)); // rastgele -5..-20
+  applyEffects(effects);
+  updateHUD();
+  AudioEngine.playFrequencyBurstFail();
+  vibrate([40, 30, 40]);
+  els.outageScene.classList.add(`result-${choiceKey}`);
+
+  playOutageFlickerBack(() => {
+    els.outageScene.classList.remove("result-approach", "result-wait", "result-run");
+    els.card.classList.remove("no-flip");
+    state.day += 1;
+    updateNightShift();
+    const shiftEnded = tickShiftClock();
+    updateHUD();
+    const endingKey = checkEnding();
+    if (endingKey) {
+      triggerEnding(endingKey);
+      return;
+    }
+    if (shiftEnded) {
+      triggerShiftComplete();
+      return;
+    }
+    advanceToNextCard();
+  });
+}
+
+function bindPowerOutageEvents() {
+  els.outageOverlay.addEventListener("pointermove", onOutagePointerMove);
+  els.outageChoices.querySelectorAll(".outage-choice").forEach((btn) => {
+    btn.addEventListener("click", () => resolveOutageChoice(btn.dataset.choice));
+  });
+}
+
 function completeTuning(success) {
   const t = state.tuning;
   if (!t) return;
@@ -991,6 +1130,7 @@ function completeTuning(success) {
 
   state.day += 1;
   updateNightShift();
+  const shiftEnded = tickShiftClock();
   updateHUD();
 
   const endingKey = checkEnding();
@@ -998,7 +1138,11 @@ function completeTuning(success) {
     triggerEnding(endingKey);
     return;
   }
-  state.forcedNextId = resultId;
+  state.forcedNextId = resultId; // shiftEnded olsa bile forcedNextId korunur
+  if (shiftEnded) {
+    triggerShiftComplete();
+    return;
+  }
   advanceToNextCard();
 }
 
@@ -1062,6 +1206,7 @@ function setMeterWidths() {
   setSegmentValue("trust", state.trust);
   setSegmentValue("sanity", state.sanity);
   setSegmentValue("signal", state.signal);
+  setSegmentValue("awake", state.awakeness);
 }
 
 function clearSegmentsVisual(meterKey) {
@@ -1070,7 +1215,8 @@ function clearSegmentsVisual(meterKey) {
 }
 
 function updateHUD() {
-  els.day.textContent = `GÜN ${state.day}`;
+  els.day.textContent = state.day;
+  els.hudCredits.textContent = `${state.credits} Cr`;
   els.tape.textContent = `BANT #${String(state.tapeNumber).padStart(3, "0")}: ${STORY_META.operatorName}`;
   if (!meterBlackoutActive) setMeterWidths();
   updateGlitchLevel();
@@ -1078,6 +1224,9 @@ function updateHUD() {
   els.statReadout.trust.textContent = Math.round(state.trust);
   els.statReadout.sanity.textContent = Math.round(state.sanity);
   els.statReadout.signal.textContent = Math.round(state.signal);
+  if (els.statReadout.awake) els.statReadout.awake.textContent = Math.round(state.awakeness);
+  updateShiftClockDisplay();
+  if (els.canteenOverlay && els.canteenOverlay.classList.contains("show")) updateCanteenUI();
 }
 
 /* Akıl kritikken göstergeler 1-1.5sn için sıfıra düşüp geri dönüyor — oyuncu hangi kaynağın
@@ -1091,6 +1240,7 @@ function maybeBlackoutMeters() {
   clearSegmentsVisual("trust");
   clearSegmentsVisual("sanity");
   clearSegmentsVisual("signal");
+  clearSegmentsVisual("awake");
   setTimeout(() => {
     meterBlackoutActive = false;
     setMeterWidths();
@@ -1133,6 +1283,7 @@ function refreshGlitchTextLoop() {
     maybeBlackoutMeters();
     const card = DECK.find((c) => c.id === state.currentCardId);
     if (!card || card.type === "memory_letter") return; // ham {{...}} metni sızdırmasın, panel kendi çizimini yönetir
+    if (card.type === "power_outage") return; // card.text/left/right yok — opak kesinti katmanı zaten her şeyi kaplıyor
 
     if (Date.now() < hallucinationUntil) return; // sanrı hâlâ ekranda, bu tick'te dokunma
 
@@ -1164,13 +1315,166 @@ function refreshGlitchTextLoop() {
       AudioEngine.playMicroWhisper();
     }
 
-    if (card.type !== "radio_tune") {
+    if (card.left && card.right) {
       const useLeftGlitch = state.sanity < 25 && card.left.glitchLabel;
       const useRightGlitch = state.sanity < 25 && card.right.glitchLabel;
       els.leftLabel.textContent = useLeftGlitch ? card.left.glitchLabel : card.left.label;
       els.rightLabel.textContent = useRightGlitch ? card.right.glitchLabel : card.right.label;
     }
   }, 900);
+}
+
+/* ========================================================================
+   SAAT VE VARDİYA SİSTEMİ (Gece Döngüsü)
+   state.day / faz / gece-vardiyası mantığına DOKUNMAZ — tamamen paralel, kozmetik+ekonomik
+   bir katman. Her gerçek kart çözümünde tickShiftClock() çağrılır (bkz. resolveChoice,
+   completeTuning, resolveOutageChoice, onMemoryContinue, triggerBuseSecretChannel).
+   ======================================================================== */
+const SHIFT_END_MINUTES = 360; // 06:00'da vardiya biter
+const SHIFT_CARDS_PER_SHIFT = 10; // tam 10. kartta saat 06:00'a ulaşır
+const CLOCK_MINUTES_PER_CARD = SHIFT_END_MINUTES / SHIFT_CARDS_PER_SHIFT; // 36 dk/kart
+const AWAKENESS_DRAIN_PER_CARD = 10; // 10 kartlık vardiya sonunda Uyanıklık da tam sıfırlanır
+const AWAKENESS_LOW_THRESHOLD = 20;
+const AWAKENESS_LOW_SANITY_DRAIN = 2;
+const SHIFT_CREDIT_REWARD = 20;
+
+function formatShiftClock() {
+  const totalMinutes = ((state.shiftClock % 1440) + 1440) % 1440;
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+function updateShiftClockDisplay() {
+  els.shiftClock.textContent = formatShiftClock();
+}
+function updateDrowsyEffect() {
+  document.documentElement.classList.toggle("drowsy", state.awakeness < AWAKENESS_LOW_THRESHOLD && !state.ended);
+  AudioEngine.updateForState(state.sanity, state.signal, state.awakeness);
+}
+function updateBeerBlurVisual() {
+  els.cardStage.classList.toggle("beer-blur", state.beerBlurCardsRemaining > 0);
+}
+
+/* Her gerçek kart çözümünde bir kez çağrılır: saati ilerletir, Uyanıklığı düşürür,
+   düşükse ekstra Akıl hasarı uygular, bira bulanıklığını sayar. Vardiya bittiyse true döner —
+   çağıran taraf bu durumda advanceToNextCard() yerine triggerShiftComplete() çağırmalı. */
+function tickShiftClock() {
+  state.shiftClock += CLOCK_MINUTES_PER_CARD;
+  state.awakeness = clamp(state.awakeness - AWAKENESS_DRAIN_PER_CARD);
+  if (state.awakeness < AWAKENESS_LOW_THRESHOLD) {
+    state.sanity = clamp(state.sanity - AWAKENESS_LOW_SANITY_DRAIN);
+  }
+  if (state.beerBlurCardsRemaining > 0) {
+    state.beerBlurCardsRemaining -= 1;
+    updateBeerBlurVisual();
+  }
+  updateShiftClockDisplay();
+  updateDrowsyEffect();
+  return state.shiftClock >= SHIFT_END_MINUTES;
+}
+
+/* Papers, Please tarzı Gün Sonu Bülteni — her vardiya sonunda sırayla gösterilen manşetler.
+   "Parazit Frekans" evrenine ait, bürokratik/resmi bir dille yazılmış, gitgide çözülen bir anlatı. */
+const dailyNews = [
+  {
+    headline: "7. BÖLGE SESSİZLİĞİ",
+    body: "7. Bölge ile iletişim koptu. Sokaklarda hareketsiz, gülümseyen siviller rapor edildi. Vatandaşlarımıza sessiz bölgelerden uzak durmaları ve şüpheli frekanslara itibar etmemeleri tavsiye edilir.",
+  },
+  {
+    headline: "KARANTİNA GENİŞLİYOR",
+    body: "Sivil Savunma, 3. ve 5. Bölgeler arasına yeni kontrol noktaları kurdu. Geçiş izni olmayan araçlar durdurulmadan ateş açma emri verilmiştir. Bu önlem 'geçici' olarak nitelendirilmektedir.",
+  },
+  {
+    headline: "ETKİLENEN VATANDAŞ SAYISI",
+    body: "Sağlık Bakanlığı, etkilenen vatandaş sayısını artık 'sayılamayacak kadar çok' olarak güncellemiştir. Kayıp yakınları için başvuru hattı geçici olarak kapatılmıştır — hat, aramaları başka bir yere yönlendirmeye başladığı için.",
+  },
+  {
+    headline: "GÖZCÜ İSTASYONLARI",
+    body: "Yetkililer, ülke genelindeki dinleme istasyonlarının 'rutin bakımda' olduğunu duyurdu. Gerçekte, hayatta kalan son birkaç istasyon dışında hiçbiri yanıt vermiyor. Sen hâlâ oradaysan, bu bülteni kimin yazdığını sorgulama.",
+  },
+  {
+    headline: "BU BÜLTEN HAKKINDA",
+    body: "Bu bülteni her gün aynı saatte alıyorsun, biliyoruz. Belki fark etmemişsindir ama son iki gündür aynı cümleleri tekrar ediyoruz. Sorun yok. Sen de tekrar etmeye başlarsın, zamanla. Herkes başlıyor.",
+  },
+];
+
+function triggerShiftComplete() {
+  state.credits += SHIFT_CREDIT_REWARD;
+  const news = dailyNews[(state.shiftNumber - 1) % dailyNews.length];
+  els.bulletinDayNum.textContent = state.shiftNumber;
+  els.bulletinHeadline.textContent = `[ ${news.headline} ]`;
+  els.bulletinBody.textContent = news.body;
+  els.bulletinReward.textContent = `[ GÜNLÜK ÖDÜL: +${SHIFT_CREDIT_REWARD} KREDİ ]`;
+  els.bulletinOverlay.classList.add("show");
+  state.bulletinActive = true;
+  AudioEngine.playShiftCompleteChime();
+
+  state.shiftNumber += 1;
+  state.shiftClock = 0;
+  state.awakeness = 100; // yeni vardiyaya dinlenmiş başlanır
+  updateDrowsyEffect();
+  updateShiftClockDisplay();
+  updateHUD();
+}
+
+/* Bültendeki "[ YENİ VARDİYAYA BAŞLA ]" butonuna basılana kadar oyun bir sonraki güne geçmez —
+   oyuncu bu ekranda Kantin Ağı'nı da kullanabilir (bkz. openCanteen). */
+function continueFromBulletin() {
+  if (!state.bulletinActive) return;
+  state.bulletinActive = false;
+  els.bulletinOverlay.classList.remove("show");
+  AudioEngine.playClick();
+  advanceToNextCard();
+}
+
+/* ---------- Kantin Ağı (Ekonomi Sistemi) ---------- */
+const COFFEE_COST = 10;
+const BEER_COST = 15;
+const BEER_BLUR_CARDS = 3;
+
+function updateCanteenUI() {
+  els.canteenCredits.textContent = `${state.credits} Cr`;
+  els.buyCoffeeBtn.disabled = state.credits < COFFEE_COST;
+  els.buyBeerBtn.disabled = state.credits < BEER_COST;
+}
+function openCanteen() {
+  updateCanteenUI();
+  els.canteenOverlay.classList.add("show");
+}
+function closeCanteen() {
+  els.canteenOverlay.classList.remove("show");
+}
+function buyCoffee() {
+  if (state.credits < COFFEE_COST || state.ended) return;
+  state.credits -= COFFEE_COST;
+  state.awakeness = 100;
+  AudioEngine.playCoffeeSip();
+  updateHUD();
+  updateCanteenUI();
+  updateDrowsyEffect();
+}
+function buyBeer() {
+  if (state.credits < BEER_COST || state.ended) return;
+  state.credits -= BEER_COST;
+  state.sanity = 100;
+  state.beerBlurCardsRemaining = BEER_BLUR_CARDS;
+  AudioEngine.playCanOpen();
+  updateHUD();
+  updateCanteenUI();
+  updateBeerBlurVisual();
+}
+function bindCanteenEvents() {
+  els.canteenBtn.addEventListener("click", () => { AudioEngine.playClick(); openCanteen(); });
+  els.canteenClose.addEventListener("click", () => { AudioEngine.playClick(); closeCanteen(); });
+  els.canteenOverlay.addEventListener("click", (e) => {
+    if (e.target === els.canteenOverlay) closeCanteen();
+  });
+  els.buyCoffeeBtn.addEventListener("click", buyCoffee);
+  els.buyBeerBtn.addEventListener("click", buyBeer);
+}
+
+function bindBulletinEvents() {
+  els.bulletinContinueBtn.addEventListener("click", continueFromBulletin);
 }
 
 /* ---------- Etki uygulama ---------- */
@@ -1292,6 +1596,12 @@ const AudioEngine = (() => {
   let ringGain = null;
   let whisperSource = null;
   let whisperGain = null;
+
+  // Uyanıklık <20: Dinleyicilerin frekansına karşı savunmasızlık — çok alçak, ürkütücü bir ıslık/uğultu
+  let listenerHumOsc = null;
+  let listenerHumGain = null;
+  let listenerNoiseSource = null;
+  let listenerNoiseGain = null;
 
   // Tuner mini-oyunu: boş frekans gürültüsü + yaklaşınca netleşen mors/fısıltı
   let tunerNoiseSource = null;
@@ -1483,7 +1793,41 @@ const AudioEngine = (() => {
     }
   }
 
-  function updateForState(sanity, signal) {
+  function ensureListenerHumLayer() {
+    if (listenerHumOsc || !ctx) return;
+    try {
+      listenerHumOsc = ctx.createOscillator();
+      listenerHumOsc.type = "sine";
+      listenerHumOsc.frequency.value = 740; // ince, rahatsız edici bir ıslık
+      const humLfo = ctx.createOscillator();
+      humLfo.type = "sine";
+      humLfo.frequency.value = 0.15; // çok yavaş perde salınımı — "nefes alıyormuş" hissi
+      const humLfoGain = ctx.createGain();
+      humLfoGain.gain.value = 18;
+      humLfo.connect(humLfoGain).connect(listenerHumOsc.frequency);
+      humLfo.start();
+      listenerHumGain = ctx.createGain();
+      listenerHumGain.gain.value = 0;
+      listenerHumOsc.connect(listenerHumGain).connect(sfxBus);
+      listenerHumOsc.start();
+
+      listenerNoiseSource = ctx.createBufferSource();
+      listenerNoiseSource.buffer = makeNoiseBuffer(3);
+      listenerNoiseSource.loop = true;
+      const listenerNoiseFilter = ctx.createBiquadFilter();
+      listenerNoiseFilter.type = "bandpass";
+      listenerNoiseFilter.frequency.value = 900;
+      listenerNoiseFilter.Q.value = 0.6;
+      listenerNoiseGain = ctx.createGain();
+      listenerNoiseGain.gain.value = 0;
+      listenerNoiseSource.connect(listenerNoiseFilter).connect(listenerNoiseGain).connect(sfxBus);
+      listenerNoiseSource.start();
+    } catch (e) {
+      /* yoksay */
+    }
+  }
+
+  function updateForState(sanity, signal, awakeness) {
     if (!ctx || gameplayDead) return;
     const t = ctx.currentTime;
 
@@ -1504,6 +1848,15 @@ const AudioEngine = (() => {
       if (ringGain) ringGain.gain.setTargetAtTime(0, t, 0.8);
       if (whisperGain) whisperGain.gain.setTargetAtTime(0, t, 0.8);
     }
+
+    if (typeof awakeness === "number" && awakeness < AWAKENESS_LOW_THRESHOLD) {
+      ensureListenerHumLayer();
+      if (listenerHumGain) listenerHumGain.gain.setTargetAtTime(0.018, t, 1.2);
+      if (listenerNoiseGain) listenerNoiseGain.gain.setTargetAtTime(0.008, t, 1.2);
+    } else {
+      if (listenerHumGain) listenerHumGain.gain.setTargetAtTime(0, t, 1.2);
+      if (listenerNoiseGain) listenerNoiseGain.gain.setTargetAtTime(0, t, 1.2);
+    }
   }
 
   function onEnding() {
@@ -1518,6 +1871,8 @@ const AudioEngine = (() => {
       if (gameGain) gameGain.gain.setTargetAtTime(0, t + 0.15, 0.4);
       if (ringGain) ringGain.gain.setTargetAtTime(0, t, 0.2);
       if (whisperGain) whisperGain.gain.setTargetAtTime(0, t, 0.2);
+      if (listenerHumGain) listenerHumGain.gain.setTargetAtTime(0, t, 0.2);
+      if (listenerNoiseGain) listenerNoiseGain.gain.setTargetAtTime(0, t, 0.2);
       const src = gameSource;
       gameSource = null;
       setTimeout(() => {
@@ -1796,6 +2151,292 @@ const AudioEngine = (() => {
     });
   }
 
+  /* ---------- Sonlara özel imza sesleri (bkz. triggerEnding / playEndingSignature) ---------- */
+  function playSignatureDeepFade() {
+    // power_zero: alçalan derin bir hum, jeneratörün son nefesi
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(70, now);
+    osc.frequency.exponentialRampToValueAtTime(20, now + 2.2);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.16, now + 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 2.4);
+    osc.connect(gain).connect(sfxBus);
+    osc.start(now);
+    osc.stop(now + 2.5);
+  }
+
+  function playSignatureExplosion() {
+    // power_max / trust_max: patlama/darbe
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const burst = ctx.createBufferSource();
+    burst.buffer = makeNoiseBuffer(0.7);
+    const burstFilter = ctx.createBiquadFilter();
+    burstFilter.type = "lowpass";
+    burstFilter.frequency.setValueAtTime(4000, now);
+    burstFilter.frequency.exponentialRampToValueAtTime(150, now + 0.6);
+    const burstGain = ctx.createGain();
+    burstGain.gain.setValueAtTime(0.32, now);
+    burstGain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+    burst.connect(burstFilter).connect(burstGain).connect(sfxBus);
+    burst.start(now);
+    burst.stop(now + 0.7);
+
+    const thud = ctx.createOscillator();
+    thud.type = "sine";
+    thud.frequency.setValueAtTime(110, now);
+    thud.frequency.exponentialRampToValueAtTime(28, now + 0.4);
+    const thudGain = ctx.createGain();
+    thudGain.gain.setValueAtTime(0.28, now);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    thud.connect(thudGain).connect(sfxBus);
+    thud.start(now);
+    thud.stop(now + 0.46);
+  }
+
+  function playSignatureDeadStatic() {
+    // trust_zero / signal_zero: kısa bir statik, sonra sessizlik
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const noise = ctx.createBufferSource();
+    noise.buffer = makeNoiseBuffer(0.8);
+    const filter = ctx.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.value = 1500;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+    noise.connect(filter).connect(gain).connect(sfxBus);
+    noise.start(now);
+    noise.stop(now + 0.8);
+  }
+
+  function playSignatureGlitchDescend() {
+    // sanity_zero: uyumsuz, alçalan bir glitch tonu
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [0, 0.12, 0.24, 0.4].forEach((t, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(500 - i * 90, now + t);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.06, now + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + t + 0.15);
+      osc.connect(gain).connect(sfxBus);
+      osc.start(now + t);
+      osc.stop(now + t + 0.16);
+    });
+  }
+
+  function playSignatureFlatline() {
+    // sanity_max: tek, düz, hissiz bir ton
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = 220;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.07, now + 0.3);
+    gain.gain.setValueAtTime(0.07, now + 2.2);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 2.8);
+    osc.connect(gain).connect(sfxBus);
+    osc.start(now);
+    osc.stop(now + 2.9);
+  }
+
+  function playSignatureResonanceSwell() {
+    // signal_max: yükselen, rezonanslı bir dalga
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(200, now);
+    osc.frequency.exponentialRampToValueAtTime(900, now + 1.3);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.12, now + 1.0);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.6);
+    osc.connect(gain).connect(sfxBus);
+    osc.start(now);
+    osc.stop(now + 1.7);
+  }
+
+  function playSignatureWarmChime() {
+    // true_escape: sıcak, umut veren yükselen akor
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [392, 494, 587, 784].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      const start = now + i * 0.14;
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.linearRampToValueAtTime(0.1, start + 0.06);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 1.2);
+      osc.connect(gain).connect(sfxBus);
+      osc.start(start);
+      osc.stop(start + 1.3);
+    });
+  }
+
+  const ENDING_SIGNATURE_SOUNDS = {
+    power_zero: playSignatureDeepFade,
+    power_max: playSignatureExplosion,
+    trust_zero: playSignatureDeadStatic,
+    trust_max: playSignatureExplosion,
+    sanity_zero: playSignatureGlitchDescend,
+    sanity_max: playSignatureFlatline,
+    signal_zero: playSignatureDeadStatic,
+    signal_max: playSignatureResonanceSwell,
+    true_escape: playSignatureWarmChime,
+  };
+  function playEndingSignature(key) {
+    const fn = ENDING_SIGNATURE_SOUNDS[key];
+    if (fn) fn();
+  }
+
+  /* ---------- İllüzyonun Kırılması: şalter atma sesi (elektrik kesintisi) ---------- */
+  /* ---------- İllüzyonun Kırılması: fener camdaki silüete değince ani, korkutucu bir sting ---------- */
+  /* ---------- Saat/Vardiya & Kantin Ağı sesleri ---------- */
+  function playShiftCompleteChime() {
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [523, 659, 784].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      const start = now + i * 0.16;
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.linearRampToValueAtTime(0.09, start + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.7);
+      osc.connect(gain).connect(sfxBus);
+      osc.start(start);
+      osc.stop(start + 0.75);
+    });
+  }
+
+  function playCoffeeSip() {
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const noise = ctx.createBufferSource();
+    noise.buffer = makeNoiseBuffer(0.35);
+    const filter = ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 700;
+    filter.Q.value = 1.4;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.08, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    noise.connect(filter).connect(gain).connect(sfxBus);
+    noise.start(now);
+    noise.stop(now + 0.4);
+  }
+
+  function playCanOpen() {
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const click = ctx.createOscillator();
+    click.type = "square";
+    click.frequency.setValueAtTime(900, now);
+    click.frequency.exponentialRampToValueAtTime(200, now + 0.08);
+    const clickGain = ctx.createGain();
+    clickGain.gain.setValueAtTime(0.18, now);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    click.connect(clickGain).connect(sfxBus);
+    click.start(now);
+    click.stop(now + 0.11);
+
+    const fizz = ctx.createBufferSource();
+    fizz.buffer = makeNoiseBuffer(0.5);
+    const fizzFilter = ctx.createBiquadFilter();
+    fizzFilter.type = "highpass";
+    fizzFilter.frequency.value = 3000;
+    const fizzGain = ctx.createGain();
+    fizzGain.gain.setValueAtTime(0.001, now + 0.1);
+    fizzGain.gain.linearRampToValueAtTime(0.05, now + 0.14);
+    fizzGain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+    fizz.connect(fizzFilter).connect(fizzGain).connect(sfxBus);
+    fizz.start(now + 0.1);
+    fizz.stop(now + 0.56);
+  }
+
+  function playJumpScareSting() {
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Ani, tiz, uyumsuz bir çığlık-benzeri ton
+    const shriek = ctx.createOscillator();
+    shriek.type = "sawtooth";
+    shriek.frequency.setValueAtTime(180, now);
+    shriek.frequency.exponentialRampToValueAtTime(1400, now + 0.09);
+    shriek.frequency.exponentialRampToValueAtTime(220, now + 0.4);
+    const shriekGain = ctx.createGain();
+    shriekGain.gain.setValueAtTime(0.001, now);
+    shriekGain.gain.linearRampToValueAtTime(0.22, now + 0.02);
+    shriekGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    shriek.connect(shriekGain).connect(sfxBus);
+    shriek.start(now);
+    shriek.stop(now + 0.5);
+
+    // Alttan gelen ani, kısa gürültü darbesi (vuruş hissi)
+    const hit = ctx.createBufferSource();
+    hit.buffer = makeNoiseBuffer(0.3);
+    const hitFilter = ctx.createBiquadFilter();
+    hitFilter.type = "lowpass";
+    hitFilter.frequency.value = 900;
+    const hitGain = ctx.createGain();
+    hitGain.gain.setValueAtTime(0.3, now);
+    hitGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    hit.connect(hitFilter).connect(hitGain).connect(sfxBus);
+    hit.start(now);
+    hit.stop(now + 0.3);
+  }
+
+  function playBreakerFlip() {
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const click = ctx.createOscillator();
+    click.type = "square";
+    click.frequency.setValueAtTime(140, now);
+    const clickGain = ctx.createGain();
+    clickGain.gain.setValueAtTime(0.3, now);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    click.connect(clickGain).connect(sfxBus);
+    click.start(now);
+    click.stop(now + 0.11);
+
+    const thud = ctx.createBufferSource();
+    thud.buffer = makeNoiseBuffer(0.3);
+    const thudFilter = ctx.createBiquadFilter();
+    thudFilter.type = "lowpass";
+    thudFilter.frequency.value = 200;
+    const thudGain = ctx.createGain();
+    thudGain.gain.setValueAtTime(0.25, now + 0.02);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    thud.connect(thudFilter).connect(thudGain).connect(sfxBus);
+    thud.start(now + 0.02);
+    thud.stop(now + 0.36);
+  }
+
   function playFrequencyBurstFail() {
     ensure();
     if (!ctx) return;
@@ -1942,6 +2583,12 @@ const AudioEngine = (() => {
     playRepairSuccessChime,
     playBuseSecretSting,
     playMemoryRevealChime,
+    playBreakerFlip,
+    playJumpScareSting,
+    playEndingSignature,
+    playShiftCompleteChime,
+    playCoffeeSip,
+    playCanOpen,
     startMenuMusic,
     stopMenuMusic,
     startGameplayMusic,
@@ -1977,7 +2624,8 @@ function triggerEnding(key) {
   AudioEngine.playEjectSound();
   AudioEngine.onEnding();
   setTimeout(() => {
-    els.endingOverlay.classList.add("show");
+    els.endingOverlay.classList.add("show", `sig-${key}`);
+    AudioEngine.playEndingSignature(key);
   }, 450);
 }
 
@@ -2011,6 +2659,7 @@ function resolveChoice(side) {
   state.pendingCallbacks.forEach((cb) => { cb.remaining -= 1; });
   state.day += 1;
   updateNightShift();
+  const shiftEnded = tickShiftClock();
   updateHUD();
 
   if (choice.triggerEnding) {
@@ -2021,6 +2670,10 @@ function resolveChoice(side) {
   const endingKey = checkEnding();
   if (endingKey) {
     triggerEnding(endingKey);
+    return;
+  }
+  if (shiftEnded) {
+    triggerShiftComplete();
     return;
   }
   advanceToNextCard();
@@ -2073,7 +2726,7 @@ function vibrate(ms) {
 }
 
 function onPointerDown(e) {
-  if (state.ended || state.tuning || state.hardwareFault || state.memory) return; // Tuner/arıza/Zihin Eşleme açıkken standart kaydırma kilitli
+  if (state.ended || state.tuning || state.hardwareFault || state.memory || state.outageActive || state.bulletinActive) return; // Tuner/arıza/Zihin Eşleme/Kesinti/Bülten açıkken standart kaydırma kilitli
   const activeCard = DECK.find((c) => c.id === state.currentCardId);
   if (activeCard && activeCard.type === "memory_letter") return; // hafıza mektubunda swipe anlamsız
   try { els.card.setPointerCapture(e.pointerId); } catch (err) { /* yakalama başarısız olsa da sürükleme devam eder */ }
@@ -2171,7 +2824,7 @@ function bindFlipEvents() {
 
 function bindKeyboard() {
   window.addEventListener("keydown", (e) => {
-    if (state.ended || state.hardwareFault || state.memory) return;
+    if (state.ended || state.hardwareFault || state.memory || state.outageActive || state.bulletinActive) return;
     const activeCard = DECK.find((c) => c.id === state.currentCardId);
     if (activeCard && activeCard.type === "memory_letter") return;
     if (state.tuning) {
@@ -2242,17 +2895,32 @@ function restart() {
   state.memoryLettersFound = [];
   state.characterFates = {};
   state.memory = null;
+  state.outageActive = false;
+  state.outageRevealed = false;
+  state.awakeness = 100;
+  state.credits = 0;
+  state.shiftClock = 0;
+  state.shiftNumber = 1;
+  state.beerBlurCardsRemaining = 0;
+  state.bulletinActive = false;
   state.tapeNumber = bumpTapeNumber();
   meterBlackoutActive = false;
   AudioEngine.onRestart();
-  els.endingOverlay.classList.remove("show");
+  els.endingOverlay.classList.remove("show", ...Object.keys(ENDINGS).map((k) => `sig-${k}`));
   els.card.classList.remove("tape-eject");
   els.hardwareFault.hidden = true;
-  els.cardStage.classList.remove("fault-active");
+  els.cardStage.classList.remove("fault-active", "beer-blur");
   els.buseSecretBanner.classList.remove("show");
   els.memoryLetter.hidden = true;
   els.memoryResonance.hidden = true;
+  els.bulletinOverlay.classList.remove("show");
+  els.canteenOverlay.classList.remove("show");
+  document.documentElement.classList.remove("drowsy");
+  updateShiftClockDisplay();
   els.cardStage.classList.remove("memory-active");
+  els.outageOverlay.classList.remove("show", "flicker-out");
+  els.outageScene.classList.remove("result-approach", "result-wait", "result-run");
+  els.outageChoices.hidden = true;
   document.documentElement.classList.remove("glitch-level-1", "glitch-level-2", "glitch-level-3", "night-shift", "sanity-crisis", "memory-mode");
   updateHUD();
   startIntro();
@@ -2260,6 +2928,25 @@ function restart() {
 }
 
 function cacheEls() {
+  els.screen = qs(".screen");
+  els.screenGlare = qs(".screen-glare");
+  els.outageOverlay = qs(".outage-overlay");
+  els.outageChoices = qs(".outage-choices");
+  els.outageScene = qs(".outage-scene");
+  els.shiftClock = qs(".shift-clock");
+  els.hudCredits = qs(".hud-credits");
+  els.bulletinOverlay = qs(".bulletin-overlay");
+  els.bulletinDayNum = qs(".bulletin-day-num");
+  els.bulletinHeadline = qs(".bulletin-headline");
+  els.bulletinBody = qs(".bulletin-body");
+  els.bulletinReward = qs(".bulletin-reward");
+  els.bulletinContinueBtn = qs(".bulletin-continue-btn");
+  els.canteenBtn = qs(".canteen-btn");
+  els.canteenOverlay = qs(".canteen-overlay");
+  els.canteenClose = qs(".canteen-close");
+  els.canteenCredits = qs(".canteen-credits");
+  els.buyCoffeeBtn = qs(".buy-coffee-btn");
+  els.buyBeerBtn = qs(".buy-beer-btn");
   els.card = qs(".card");
   els.cardStage = qs(".card-stage");
   els.cardFlipper = qs(".card-flipper");
@@ -2505,11 +3192,18 @@ function resumeBroadcast() {
   state.hardwareFault = saved.hardwareFault || null;
   state.memoryLettersFound = Array.isArray(saved.memoryLettersFound) ? saved.memoryLettersFound : [];
   state.characterFates = saved.characterFates && typeof saved.characterFates === "object" ? saved.characterFates : {};
+  state.awakeness = typeof saved.awakeness === "number" ? saved.awakeness : 100;
+  state.credits = typeof saved.credits === "number" ? saved.credits : 0;
+  state.shiftClock = typeof saved.shiftClock === "number" ? saved.shiftClock : 0;
+  state.shiftNumber = typeof saved.shiftNumber === "number" ? saved.shiftNumber : 1;
+  state.beerBlurCardsRemaining = typeof saved.beerBlurCardsRemaining === "number" ? saved.beerBlurCardsRemaining : 0;
 
   updateNightShift();
   AudioEngine.stopMenuMusic();
   AudioEngine.startGameplayMusic();
   updateHUD();
+  updateDrowsyEffect();
+  updateBeerBlurVisual();
   const card = DECK.find((c) => c.id === saved.currentCardId) || pickCard();
   renderCard(card, { animateIn: false });
   if (state.hardwareFault) renderHardwareFault();
@@ -2607,6 +3301,10 @@ function init() {
   bindHardwareFaultEvents();
   bindPortraitEvents();
   bindMemoryEvents();
+  bindPowerOutageEvents();
+  bindCanteenEvents();
+  bindBulletinEvents();
+  // bindParallaxTilt(); — kullanıcı isteğiyle kapatıldı: fare hareketinde arka planın eğilmesi itici bulundu.
   bindKeyboard();
   els.restartBtn.addEventListener("click", restart);
   initSettingsPanel();
@@ -2614,7 +3312,7 @@ function init() {
   updateHUD();
   schedulePortraitHorrorFlash();
   // Müzik filtresi/wobble/fısıltı katmanını kart geçişlerinden bağımsız, sürekli günceller.
-  setInterval(() => AudioEngine.updateForState(state.sanity, state.signal), 500);
+  setInterval(() => AudioEngine.updateForState(state.sanity, state.signal, state.awakeness), 500);
 }
 
 document.addEventListener("DOMContentLoaded", init);

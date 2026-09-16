@@ -36,6 +36,14 @@ const CAST = {
 const DECK = [
   // ---- FAZ 1: Hayatta Kalma Rutini (Gün 1-5) ----
   {
+    // TEST: İllüzyonun Kırılması — Elektrik Kesintisi & El Feneri. Kolay tetiklensin diye
+    // faz 1 havuzunda ve hidden:false; denge/sıklık netleşince hidden:true + forcedNextId'ye
+    // veya ayrı bir "rastgele nadir olay" mekanizmasına taşınabilir.
+    id: "test_power_outage",
+    phase: 1,
+    type: "power_outage",
+  },
+  {
     id: "c1_shelter_call",
     phase: 1,
     image: "images/radio_caller.jpg",
@@ -134,6 +142,15 @@ const DECK = [
     text: "“Sesi biz de duyduk. Artık her akşam senin frekansına dönüp onu dinliyoruz. Kutsanmışsın.”",
     left: { label: "Sustur", effects: { trust: -14, sanity: 4 } },
     right: { label: "Yayına Devam Et", effects: { trust: 16, signal: 8 } },
+  },
+  {
+    id: "c2_daughter_at_window",
+    phase: 2,
+    image: "images/radio_caller.jpg",
+    speaker: "Telsiz — çökmüş bir baba sesi",
+    text: "“Kızım hâlâ mutfak penceresinin önünde. Sabah oraya koydum, akşam hâlâ orada, aynı açıyla duruyor. Ona yemek götürdüm. Almadı. Sadece başını çevirdi, bana baktı ve... teşekkür eder gibi gülümsedi. Kimse bana bunun için teşekkür etmesin. Lütfen, biri onu bana geri getirsin.”",
+    left: { label: "Onu zorla içeri al de", effects: { sanity: -10, trust: 6 } },
+    right: { label: "Belki dinlenmek istiyordur, dokunma de", effects: { sanity: -6, trust: -8 } },
   },
   {
     id: "c2_fuel_crisis",
@@ -1537,7 +1554,18 @@ const DECK = [
     text: "“Beni bulman bu kadar kolay olmamalıydı. Ya da her zaman bu kadar yakınımdaydın.”",
     glitchText: "“B&ni bulman bu kadar ko%ay olmamalıydı. Y& da her z&man bu kadar yakınımd&ydın.”",
     left: { label: "Uzaklaş, korkuyla", effects: { signal: -10, sanity: -6 } },
-    right: { label: "Yaklaş, dinle", effects: { signal: 18, sanity: -10 } },
+    right: { label: "Yaklaş, dinle", effects: { signal: 18, sanity: -10 }, nextCardId: "entity_direct_address" },
+  },
+  {
+    id: "entity_direct_address",
+    phase: 3,
+    hidden: true,
+    image: "images/fisilti.jpg",
+    speaker: CAST.fisilti,
+    text: "“—dinliyorsun değil mi. Biliyorum dinliyorsun, çünkü ses seviyeni açtın az önce, tık sesini duydum. Hoş geldin. Burada kimse bağırmıyor. Burada kimse ağlamıyor. Sadece dinliyoruz. Sen de gelip dinlersen, çok daha... hafif hissedeceksin. Söz veriyorum. Söz veriyorum. Söz veriyorum.”",
+    glitchText: "“—d&nliyorsun değil mi. S&z ver&yorum. S&z ver&yorum. S&z ver&yo—”",
+    left: { label: "Telsizi kapat, uzaklaş", effects: { signal: -18, sanity: 10 } },
+    right: { label: "...sesini biraz daha aç", effects: { signal: 14, sanity: -18 } },
   },
   {
     id: "entity_whisper_failure",
@@ -1645,11 +1673,29 @@ const DECK = [
     left: {
       label: "Onunla konuş, sakinleştirmeye çalış",
       effects: { sanity: -4, rel: { mert: 10 } },
-      scheduleCallback: { id: "mert_final_test", after: 3 },
+      scheduleCallback: { id: "mert_whistling_tune", after: 3 },
     },
     right: {
       label: "Mesafeni koru, izle",
       effects: { rel: { mert: -6 } },
+      scheduleCallback: { id: "mert_whistling_tune", after: 3 },
+    },
+  },
+  {
+    id: "mert_whistling_tune",
+    phase: 2,
+    hidden: true,
+    image: "images/mert.jpg",
+    speaker: CAST.mert,
+    text: "“Nöbetteyken bir şey fark ettim de sana söylemeden duramadım: eskiden gece nöbetlerinde kendi kendime ıslık çalardım, biliyorsun. Bu gece fark ettim ki üç gündür aynı melodiyi çalıyormuşum. Hangi şarkı olduğunu hatırlamıyorum. Ama çok huzur verici, Ali. Sen de duymalısın.”",
+    left: {
+      label: "Islık çalmayı kes, ona söyle",
+      effects: { sanity: 4, rel: { mert: -8 } },
+      scheduleCallback: { id: "mert_final_test", after: 3 },
+    },
+    right: {
+      label: "Zararsız bir alışkanlık, boş ver",
+      effects: { sanity: -8, rel: { mert: 6 } },
       scheduleCallback: { id: "mert_final_test", after: 3 },
     },
   },
@@ -1804,11 +1850,29 @@ const DECK = [
     left: {
       label: "Uzaklaş, ara ver",
       effects: { sanity: 8, signal: -6, rel: { defne: -6 } },
-      scheduleCallback: { id: "defne_entity_offer", after: 5 },
+      scheduleCallback: { id: "defne_window_visitor", after: 5 },
     },
     right: {
       label: "Devam etmek istiyorum",
       effects: { sanity: -6, rel: { defne: 6 } },
+      scheduleCallback: { id: "defne_window_visitor", after: 4 },
+    },
+  },
+  {
+    id: "defne_window_visitor",
+    phase: 3,
+    hidden: true,
+    image: "images/buse.jpg",
+    speaker: CAST.defne,
+    text: "“...biliyorum beni duyabiliyorsun, hattaki cızırtıdan belli. Sormayacağım nasıl olduğunu, iyi olmadığını zaten biliyorum. Sadece... bu gece pencereme biri geldi. Uzun süre durdu. Gitmeden önce, tam camdan uzaklaşırken, bana gülümsedi. Tanıdığım biriydi ama adını hatırlamıyorum artık. Hiç kimsenin adını hatırlamıyorum. Sen benim adımı hatırlıyor musun?”",
+    left: {
+      label: "Adını hatırlıyorum, Buse",
+      effects: { sanity: 4, rel: { defne: 12 } },
+      scheduleCallback: { id: "defne_entity_offer", after: 4 },
+    },
+    right: {
+      label: "Cevap verme, hatları kapat",
+      effects: { sanity: 6, signal: -8, rel: { defne: -10 } },
       scheduleCallback: { id: "defne_entity_offer", after: 4 },
     },
   },
