@@ -148,6 +148,27 @@ html.glitch-level-3 .hud-top { animation: text-jitter 1.8s infinite; }
 .hud-readout-label { font-size: 9px; letter-spacing: 2px; color: var(--ink-dim); text-shadow: none; }
 .shift-clock, .hud-day, .hud-credits { font-size: 13px; letter-spacing: 1px; white-space: nowrap; }
 
+/* Gece Vardiyası etiketi: kırmızı vinyetin "kritik bar" alarmıyla karıştırılmaması için
+   döngünün kendisi burada açıkça adlandırılıyor (bkz. updateNightShift). */
+.night-shift-tag {
+  font-family: var(--font-hud); font-size: 9px; letter-spacing: 1.5px; color: #ff6b6b;
+  border: 1px solid #ff6b6b; border-radius: 3px; padding: 2px 6px; white-space: nowrap;
+  animation: night-shift-tag-pulse 2.4s ease-in-out infinite;
+}
+@keyframes night-shift-tag-pulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+
+/* Kritik gösterge uyarısı: hangi bar(lar)ın <20 olduğunu adıyla söyler — tek başına
+   yanıp sönen küçük segment yerine gözden kaçırılamayacak bir bant (bkz. updateCriticalWarning). */
+.critical-warning {
+  position: absolute; top: calc(max(14px, env(safe-area-inset-top)) + 30px); left: 50%; transform: translateX(-50%);
+  z-index: 59; width: max-content; max-width: min(320px, 86vw); text-align: center;
+  font-family: var(--font-hud); font-size: 10px; letter-spacing: 1.5px; line-height: 1.4;
+  background: rgba(20,2,2,0.9); color: #ff4b4b; border: 1px solid #ff4b4b; border-radius: 3px;
+  padding: 5px 12px; animation: critical-warning-blink 1s infinite;
+}
+.critical-warning[hidden] { display: none; }
+@keyframes critical-warning-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
 .settings-btn {
   font-family: var(--font-hud); font-size: 10px; letter-spacing: 1px; white-space: nowrap;
   background: transparent; color: var(--ink-dim); border: 1px solid var(--border);
@@ -904,6 +925,38 @@ html.glitch-level-2 .m-signal .segment.lit, html.glitch-level-3 .m-signal .segme
   transition: width 0.08s linear;
 }
 
+/* ---------- Mors Kod Çözme Mini-Oyunu ---------- */
+.morse-game {
+  width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.morse-game[hidden] { display: none; }
+.morse-lamp {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: #1a2024; border: 2px solid #2a3a30;
+  transition: background 0.05s, box-shadow 0.05s;
+}
+.morse-lamp.lit {
+  background: var(--crt-green); border-color: var(--crt-green);
+  box-shadow: 0 0 18px var(--crt-green), 0 0 34px rgba(62,242,160,0.5);
+}
+.morse-status-text {
+  font-family: var(--font-hud); font-size: 11px; letter-spacing: 2px; color: var(--ink-dim);
+}
+.morse-input-display {
+  font-family: var(--font-hud); font-size: clamp(18px, 5vw, 24px); letter-spacing: 4px;
+  color: var(--crt-green); min-height: 1.4em; text-shadow: 0 0 10px rgba(62,242,160,0.5);
+}
+.morse-controls { display: flex; gap: 10px; width: 100%; }
+.morse-tap-btn, .morse-replay-btn {
+  flex: 1; font-family: var(--font-hud); font-size: 11px; letter-spacing: 1.5px;
+  background: transparent; color: var(--ink); border: 1px solid var(--border);
+  padding: 12px 8px; border-radius: 3px; cursor: pointer; user-select: none; touch-action: none;
+}
+.morse-tap-btn { color: var(--crt-green); border-color: var(--crt-green); }
+.morse-tap-btn.pressed { background: rgba(62,242,160,0.18); }
+.morse-tap-btn:focus-visible, .morse-replay-btn:focus-visible { outline: 2px solid var(--crt-green); outline-offset: 2px; }
+.morse-replay-btn:hover { border-color: var(--ink-dim); color: var(--ink); }
+
 .card.tune-fail { animation: tune-fail-flash 0.5s ease-out; }
 @keyframes tune-fail-flash {
   0% { filter: brightness(1); }
@@ -1137,8 +1190,15 @@ html.memory-mode .title-block {
   .settings-btn { padding: 3px 6px; font-size: 9px; }
   .shift-clock, .hud-day, .hud-credits { font-size: 11px; }
   .hud-readout-label { font-size: 8px; }
-  .hud-readouts { gap: clamp(6px, 3vw, 14px); }
+  /* Dar ekranda üç grup tek satıra sığmayınca rastgele kırılıp üst üste binmesin diye
+     okumalar kasıtlı olarak kendi tam-genişlik ikinci satırına düşürülüyor. */
+  .hud-readouts { gap: clamp(6px, 3vw, 14px); order: 3; flex: 1 0 100%; margin-top: 3px; }
   .title-block { margin-bottom: 8px; }
+  /* hud-top burada iki satıra bölündüğü için uyarı bandı da aşağı kaymalı, yoksa okumaların üstüne biner. */
+  .critical-warning { top: calc(max(14px, env(safe-area-inset-top)) + 54px); padding: 4px 10px; }
+  /* Kritik uyarı çıktığında gösterge panelleriyle çakışmasın diye küçük bir pay bırakılıyor
+     (uyarı absolute/overlay olduğu için normalde yer kaplamaz, burada sabit bir boşluk gerekiyor). */
+  .play-area { margin-top: 22px; }
 }
 /* Yan panellerin kart yanına sığmadığı dar ekranlarda: göstergeler kartın üstüne/altına
    yatay iki şerit halinde döner (bkz. play-area/side-panel — BÖLÜM 1: Askeri Terminal HUD). */
@@ -1372,7 +1432,8 @@ html.drowsy .screen { animation: drowsy-pulse 3.6s ease-in-out infinite; }
   .ending-overlay.sig-sanity_zero .ending-body, .ending-overlay.sig-sanity_max,
   .ending-overlay.sig-signal_zero .ending-title, .ending-overlay.sig-signal_zero .ending-body,
   .ending-overlay.sig-signal_zero .ending-stats, .ending-overlay.sig-signal_max,
-  .ending-overlay.sig-true_escape, html.drowsy .screen, .bulletin-paper {
+  .ending-overlay.sig-true_escape, html.drowsy .screen, .bulletin-paper,
+  .night-shift-tag, .critical-warning {
     animation: none !important;
   }
   .card-flipper { transition: none !important; }

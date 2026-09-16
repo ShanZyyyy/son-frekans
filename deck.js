@@ -1579,6 +1579,45 @@ const DECK = [
   },
 
   // ============================================================
+  // Mors Kod Çözme Mini-Oyunu — type:"morse_decode" kartları normal sol/sağ
+  // yerine game.js'teki mors motorunu açar (bkz. startMorseDecode). pattern
+  // bir kez çalınır; oyuncu "BAS" düğmesini kısa (nokta) / uzun (çizgi)
+  // basılı tutarak aynı deseni tekrar etmeli. İlk yanlış sembolde anında
+  // failureCardId'ye düşer.
+  // ============================================================
+  {
+    id: "c_morse_silent_caller",
+    type: "morse_decode",
+    phase: 2,
+    image: "images/radio_caller.jpg",
+    speaker: "Telsiz — sessiz bir hat",
+    text: "Konuşan yok ama hat da kapanmıyor. Sonra fark ediyorsun: biri, sesini çıkaramadan, tuşlara vurarak konuşmaya çalışıyor.",
+    pattern: ["dot", "dash", "dot", "dot"],
+    successCardId: "morse_silent_caller_success",
+    failureCardId: "morse_silent_caller_failure",
+  },
+  {
+    id: "morse_silent_caller_success",
+    phase: 2,
+    hidden: true,
+    image: "images/radio_caller.jpg",
+    speaker: "Telsiz — aynı sessiz hat",
+    text: "Deseni doğru okuyorsun: “...YANIMDA... KONUŞAMIYORUM... ODADA...” Sonra hat, hiç açık kalmamış gibi, birden kesiliyor.",
+    left: { label: "Konumunu tahmin etmeye çalış", effects: { sanity: -8, trust: 10 } },
+    right: { label: "Sessizce dinlemeye devam et", effects: { sanity: -4, signal: 6 } },
+  },
+  {
+    id: "morse_silent_caller_failure",
+    phase: 2,
+    hidden: true,
+    image: "images/station_cabin.jpg",
+    speaker: "İstasyon — statik",
+    text: "Ritmi kaçırıyorsun. Vuruşlar birbirine karışıyor, sonra aniden duruyor — sanki karşı taraf artık vurmaya cesaret edemiyormuş gibi.",
+    left: { label: "Unut, boş ver", effects: { sanity: 4, signal: -6 } },
+    right: { label: "Ne demeye çalıştığını düşünüp dur", effects: { sanity: -6, signal: 4 } },
+  },
+
+  // ============================================================
   // KARAKTER GENİŞLEME PAKETİ — Eski Nöbetçi Mert Zinciri (10 kart)
   // rel.mert'e bağlı; final, güven skoruna göre 3 ayrı sonuçtan birine açılır.
   // ============================================================
@@ -2046,6 +2085,50 @@ function buildIntroCard(tapeNumber) {
     left: { label: "Derin nefes al" },
     right: { label: "Mikrofonu aç" },
   };
+}
+
+/* Sabit Giriş Zinciri: rastgele havuzdan ÖNCE, her koşuda AYNI sırayla oynanan 3 kart.
+   Amaç: oyuncuyu doğrudan rastgele (ve bağlamsız gelebilen) kartların içine atmadan önce
+   dünyayı ve göreve neden ihtiyaç duyulduğunu kurmak. hidden:true — rastgele havuzdan asla
+   çekilmez, sadece bu zincirle (nextCardId) ulaşılır. Hangi yöne kaydırılırsa kaydırılsın
+   aynı sıradaki bir sonraki karta gider; anlatı bu üç kartta dallanmaz. */
+const INTRO_CHAIN_FIRST_ID = "intro_chain_1";
+{
+  const introChain = [
+    {
+      id: "intro_chain_1",
+      image: "images/station_cabin.jpg",
+      speaker: `SEN — ${STORY_META.operatorName}`,
+      text: "Üç hafta oldu. Önce radyolardan bir uğultu sızdı, sonra televizyonlardan. Duyanlar durdu, gülümsedi, bir daha hiç eskisi gibi olmadı. Sivil Savunma buna 'Parazit Frekans' diyor. Ben buna Gözcü-7'nin neden hâlâ ayakta olduğunun cevabı diyorum: bu duvarlar, kazara, o sesi dışarıda bırakacak kadar kalın.",
+      left: { label: "Kayda devam et" },
+      right: { label: "Kayda devam et" },
+    },
+    {
+      id: "intro_chain_2",
+      image: "images/radio_caller.jpg",
+      speaker: `SEN — ${STORY_META.operatorName}`,
+      text: "Elimde resmi bir acil durum frekansı var. İnsanlar hâlâ onu tanıyor, hâlâ güveniyor — kriz başlamadan önce de oradaydı çünkü. Görevim basit: yayında kal, doğru bilgiyi ver, kimin hâlâ hayatta olduğunu öğren. Basit olan hiçbir şey burada kolay değil.",
+      left: { label: "Mikrofonu aç" },
+      right: { label: "Mikrofonu aç" },
+    },
+    {
+      id: "intro_chain_3",
+      image: "images/ali_kayra.jpg",
+      speaker: `SEN — ${STORY_META.operatorName}`,
+      text: "Tam olarak yalnız değilim. Hâlâ cevap veren birkaç ses var — kimi asker, kimi sadece korkmuş biri. Kime güveneceğimi zamanla anlayacağım. Şimdilik tek yapabileceğim dinlemek, not almak, hayatta kalmak. Bant kaydı başlıyor.",
+      left: { label: "Yayına başla" },
+      right: { label: "Yayına başla" },
+    },
+  ];
+  introChain.forEach((card, i) => {
+    card.hidden = true;
+    if (i < introChain.length - 1) {
+      const nextId = introChain[i + 1].id;
+      card.left.nextCardId = nextId;
+      card.right.nextCardId = nextId;
+    }
+    DECK.push(card);
+  });
 }
 
 const PHASE_THRESHOLDS = { 1: [1, 5], 2: [6, 12], 3: [13, Infinity] };

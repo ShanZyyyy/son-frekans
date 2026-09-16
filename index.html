@@ -71,9 +71,12 @@
         <span class="hud-readout"><span class="hud-readout-label">SAAT</span><span class="shift-clock">00:00</span></span>
         <span class="hud-readout"><span class="hud-readout-label">GÜN</span><span class="hud-day">1</span></span>
         <span class="hud-readout"><span class="hud-readout-label">KREDİ</span><span class="hud-credits">0 Cr</span></span>
+        <span class="night-shift-tag" hidden title="Gece Vardiyası: her 4 günde bir devreye girer, Akıl/Sinyal etkilerini %25 sertleştirir — bir bar kritik olduğu için değil.">[ GECE VARDİYASI ]</span>
       </div>
       <button class="settings-btn" type="button" aria-label="Ayarlar" title="Sinyal Kontrol Ünitesi">[ AYARLAR ]</button>
     </div>
+
+    <div class="critical-warning" hidden></div>
 
     <div class="settings-overlay">
       <div class="settings-panel">
@@ -170,6 +173,16 @@
                   <span class="tuner-status-text">ARIYOR...</span>
                 </div>
                 <div class="tuner-lock-bar"><div class="tuner-lock-fill"></div></div>
+              </div>
+
+              <div class="morse-game" hidden>
+                <div class="morse-lamp"></div>
+                <div class="morse-status-text">DİNLE...</div>
+                <div class="morse-input-display"></div>
+                <div class="morse-controls">
+                  <button class="morse-tap-btn" type="button">[ BAS ]</button>
+                  <button class="morse-replay-btn" type="button">[ TEKRAR DİNLE ]</button>
+                </div>
               </div>
 
               <div class="hardware-fault" hidden>

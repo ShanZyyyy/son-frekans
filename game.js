@@ -40,6 +40,7 @@ const state = {
   shiftNumber: 1, // "VARDİYA TAMAMLANDI - GÜN X" ekranındaki sayaç — state.day'den bağımsız
   beerBlurCardsRemaining: 0, // Soğuk Bira'nın yan etkisi: bu kadar kart boyunca ekran bulanık
   bulletinActive: false, // Gün Sonu Bülteni açıkken kart girişi (klavye/sürükleme) kilitli
+  morseGame: null, // { pattern, successCardId, failureCardId, inputIndex, pressStartedAt } — aktif Mors Kod Çözme oturumu
 };
 
 const els = {};
@@ -314,6 +315,7 @@ function isNight(day) {
 function updateNightShift() {
   state.isNight = isNight(state.day);
   document.documentElement.classList.toggle("night-shift", state.isNight);
+  if (els.nightShiftTag) els.nightShiftTag.hidden = !state.isNight;
 }
 
 /* ---------- Gösterge <-> etki anahtarı eşleşmesi (damga/ping için) ---------- */
@@ -684,10 +686,12 @@ function renderCard(card, { animateIn = true } = {}) {
   const isTuneCard = card.type === "radio_tune";
   const isMemoryCard = card.type === "memory_letter";
   const isOutageCard = card.type === "power_outage";
-  els.choices.hidden = isTuneCard || isMemoryCard || isOutageCard;
+  const isMorseCard = card.type === "morse_decode";
+  els.choices.hidden = isTuneCard || isMemoryCard || isOutageCard || isMorseCard;
   els.tuner.hidden = !isTuneCard;
+  els.morseGameEl.hidden = !isMorseCard;
   els.cardStage.classList.toggle("tuning-active", isTuneCard);
-  if (!isTuneCard && !isMemoryCard && !isOutageCard) {
+  if (!isTuneCard && !isMemoryCard && !isOutageCard && !isMorseCard) {
     els.leftLabel.textContent = card.left.label;
     els.rightLabel.textContent = card.right.label;
     renderImpactHints(els.impactLeft, card.left.effects);
@@ -750,6 +754,7 @@ function renderCard(card, { animateIn = true } = {}) {
 
   if (isTuneCard) startTuning(card);
   if (isOutageCard) startPowerOutage();
+  if (isMorseCard) startMorseDecode(card);
 }
 
 /* ---------- İnteraktif Telsiz Frekans Arama (Tuner Mini-Oyunu) ---------- */
@@ -853,6 +858,132 @@ function stopTuning() {
   AudioEngine.stopTunerNoise();
   state.tuning = null;
   els.cardStage.classList.remove("tuning-active");
+}
+
+/* ========================================================================
+   MORS KOD ÇÖZME MİNİ-OYUNU — kart bir nokta/çizgi deseni bir kez çalar,
+   oyuncu "BAS" düğmesini kısa (nokta) veya uzun (çizgi) basılı tutarak
+   aynı deseni tekrar etmeli. İlk yanlış sembolde anında başarısız olur.
+   Tuner/Zihin Eşleme gibi diğer mini-oyunlarla aynı "resolve" kalıbını
+   izler (bkz. completeTuning) — vardiya saatini/Uyanıklığı de aynı şekilde işler.
+   ======================================================================== */
+const MORSE_DOT_MAX_MS = 280; // bundan kısa basış nokta, eşit/uzun çizgi sayılır
+const MORSE_DOT_PLAY_MS = 220;
+const MORSE_DASH_PLAY_MS = 560;
+const MORSE_SYMBOL_GAP_MS = 220;
+
+function morseSymbolChar(sym) {
+  return sym === "dash" ? "—" : "·";
+}
+
+function startMorseDecode(card) {
+  state.morseGame = {
+    pattern: card.pattern,
+    successCardId: card.successCardId,
+    failureCardId: card.failureCardId,
+    inputIndex: 0,
+    pressStartedAt: null,
+  };
+  els.morseInputDisplay.textContent = "";
+  els.morseStatusText.textContent = "DİNLE...";
+  els.morseLamp.classList.remove("lit");
+  playMorsePattern(card.pattern);
+}
+
+function playMorsePattern(pattern) {
+  let t = 0;
+  pattern.forEach((sym) => {
+    const dur = sym === "dash" ? MORSE_DASH_PLAY_MS : MORSE_DOT_PLAY_MS;
+    setTimeout(() => {
+      if (!state.morseGame) return;
+      els.morseLamp.classList.add("lit");
+      AudioEngine.playMorseTone(sym === "dash");
+    }, t);
+    setTimeout(() => {
+      if (state.morseGame) els.morseLamp.classList.remove("lit");
+    }, t + dur);
+    t += dur + MORSE_SYMBOL_GAP_MS;
+  });
+  setTimeout(() => {
+    if (state.morseGame) els.morseStatusText.textContent = "SIRAN SENDE";
+  }, t);
+}
+
+function onMorseTapDown(e) {
+  if (!state.morseGame) return;
+  e.preventDefault();
+  state.morseGame.pressStartedAt = performance.now();
+  els.morseTapBtn.classList.add("pressed");
+}
+
+function onMorseTapUp() {
+  const g = state.morseGame;
+  if (!g || g.pressStartedAt == null) return;
+  const heldMs = performance.now() - g.pressStartedAt;
+  g.pressStartedAt = null;
+  els.morseTapBtn.classList.remove("pressed");
+  const guessed = heldMs < MORSE_DOT_MAX_MS ? "dot" : "dash";
+  const expected = g.pattern[g.inputIndex];
+  if (guessed !== expected) {
+    completeMorseDecode(false);
+    return;
+  }
+  els.morseInputDisplay.textContent += `${morseSymbolChar(guessed)} `;
+  AudioEngine.playClick();
+  g.inputIndex += 1;
+  if (g.inputIndex >= g.pattern.length) completeMorseDecode(true);
+}
+
+function completeMorseDecode(success) {
+  const g = state.morseGame;
+  if (!g) return;
+  const resultId = success ? g.successCardId : g.failureCardId;
+  state.morseGame = null;
+  els.morseGameEl.hidden = true;
+  els.choices.hidden = false;
+
+  if (success) {
+    AudioEngine.playSignalLockedChime();
+    vibrate(60);
+  } else {
+    AudioEngine.playFrequencyBurstFail();
+    vibrate([40, 40, 40]);
+    els.card.classList.add("tune-fail");
+    setTimeout(() => els.card.classList.remove("tune-fail"), 550);
+  }
+
+  state.day += 1;
+  updateNightShift();
+  const shiftEnded = tickShiftClock();
+  updateHUD();
+
+  const endingKey = checkEnding();
+  if (endingKey) {
+    triggerEnding(endingKey);
+    return;
+  }
+  state.forcedNextId = resultId; // shiftEnded olsa bile forcedNextId korunur
+  if (shiftEnded) {
+    triggerShiftComplete();
+    return;
+  }
+  advanceToNextCard();
+}
+
+function bindMorseEvents() {
+  els.morseTapBtn.addEventListener("pointerdown", onMorseTapDown);
+  els.morseTapBtn.addEventListener("pointerup", onMorseTapUp);
+  els.morseTapBtn.addEventListener("pointerleave", () => {
+    if (state.morseGame) state.morseGame.pressStartedAt = null;
+  });
+  els.morseReplayBtn.addEventListener("click", () => {
+    if (!state.morseGame) return;
+    AudioEngine.playClick();
+    els.morseInputDisplay.textContent = "";
+    state.morseGame.inputIndex = 0;
+    els.morseStatusText.textContent = "DİNLE...";
+    playMorsePattern(state.morseGame.pattern);
+  });
 }
 
 /* ---------- Buse Canlı Telsiz Frekansı (94.2 MHz gizli kanal) ---------- */
@@ -1179,6 +1310,25 @@ function bindTunerEvents() {
 /* ---------- HUD / göstergeler (segmentli LED bar) ---------- */
 const METER_SEGMENT_COUNT = 10;
 const METER_CRITICAL_THRESHOLD = 20;
+const CRITICAL_WARNING_LABELS = { power: "GÜÇ", trust: "GÜVEN", sanity: "AKIL", signal: "SİNYAL", awake: "UYANIKLIK" };
+
+/* Kırmızı vinyet (Gece Vardiyası) ile karışmasın diye: hangi bar(lar) kritikse
+   adıyla söyleyen ayrı, açık bir uyarı bandı (bkz. .critical-warning, updateHUD). */
+function updateCriticalWarning() {
+  if (!els.criticalWarning) return;
+  const critical = [];
+  if (state.power < METER_CRITICAL_THRESHOLD) critical.push(CRITICAL_WARNING_LABELS.power);
+  if (state.trust < METER_CRITICAL_THRESHOLD) critical.push(CRITICAL_WARNING_LABELS.trust);
+  if (state.sanity < METER_CRITICAL_THRESHOLD) critical.push(CRITICAL_WARNING_LABELS.sanity);
+  if (state.signal < METER_CRITICAL_THRESHOLD) critical.push(CRITICAL_WARNING_LABELS.signal);
+  if (state.awakeness < METER_CRITICAL_THRESHOLD) critical.push(CRITICAL_WARNING_LABELS.awake);
+  if (critical.length && !state.ended) {
+    els.criticalWarning.textContent = `[ UYARI: ${critical.join(" / ")} KRİTİK ]`;
+    els.criticalWarning.hidden = false;
+  } else {
+    els.criticalWarning.hidden = true;
+  }
+}
 
 function buildSegmentBars() {
   document.querySelectorAll(".segment-bar").forEach((bar) => {
@@ -1226,6 +1376,7 @@ function updateHUD() {
   els.statReadout.signal.textContent = Math.round(state.signal);
   if (els.statReadout.awake) els.statReadout.awake.textContent = Math.round(state.awakeness);
   updateShiftClockDisplay();
+  updateCriticalWarning();
   if (els.canteenOverlay && els.canteenOverlay.classList.contains("show")) updateCanteenUI();
 }
 
@@ -1453,10 +1604,11 @@ function buyCoffee() {
   updateCanteenUI();
   updateDrowsyEffect();
 }
+const BEER_SANITY_CAP = 90; // tam 100 değil: sanity_max ("HİSSİZLİK") sonunu kazara tetiklemesin diye kasıtlı olarak eşiğin altında bırakılıyor
 function buyBeer() {
   if (state.credits < BEER_COST || state.ended) return;
   state.credits -= BEER_COST;
-  state.sanity = 100;
+  state.sanity = Math.max(state.sanity, BEER_SANITY_CAP);
   state.beerBlurCardsRemaining = BEER_BLUR_CARDS;
   AudioEngine.playCanOpen();
   updateHUD();
@@ -2563,6 +2715,25 @@ const AudioEngine = (() => {
     swoosh.stop(now + 0.66);
   }
 
+  /* ---------- Mors Kod Çözme Mini-Oyunu: tek bir nokta/çizgi tonu ---------- */
+  function playMorseTone(isDash) {
+    ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const dur = isDash ? 0.5 : 0.18;
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = 740;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.1, now + 0.015);
+    gain.gain.setValueAtTime(0.1, now + dur - 0.03);
+    gain.gain.linearRampToValueAtTime(0, now + dur);
+    osc.connect(gain).connect(sfxBus);
+    osc.start(now);
+    osc.stop(now + dur + 0.02);
+  }
+
   return {
     ensure,
     startCrackle,
@@ -2589,6 +2760,7 @@ const AudioEngine = (() => {
     playShiftCompleteChime,
     playCoffeeSip,
     playCanOpen,
+    playMorseTone,
     startMenuMusic,
     stopMenuMusic,
     startGameplayMusic,
@@ -2637,6 +2809,7 @@ function resolveChoice(side) {
     updateNightShift();
     AudioEngine.stopMenuMusic();
     AudioEngine.startGameplayMusic();
+    state.forcedNextId = INTRO_CHAIN_FIRST_ID;
     renderCard(pickCard());
     return;
   }
@@ -2726,7 +2899,7 @@ function vibrate(ms) {
 }
 
 function onPointerDown(e) {
-  if (state.ended || state.tuning || state.hardwareFault || state.memory || state.outageActive || state.bulletinActive) return; // Tuner/arıza/Zihin Eşleme/Kesinti/Bülten açıkken standart kaydırma kilitli
+  if (state.ended || state.tuning || state.hardwareFault || state.memory || state.outageActive || state.bulletinActive || state.morseGame) return; // Tuner/arıza/Zihin Eşleme/Kesinti/Bülten/Mors açıkken standart kaydırma kilitli
   const activeCard = DECK.find((c) => c.id === state.currentCardId);
   if (activeCard && activeCard.type === "memory_letter") return; // hafıza mektubunda swipe anlamsız
   try { els.card.setPointerCapture(e.pointerId); } catch (err) { /* yakalama başarısız olsa da sürükleme devam eder */ }
@@ -2824,7 +2997,7 @@ function bindFlipEvents() {
 
 function bindKeyboard() {
   window.addEventListener("keydown", (e) => {
-    if (state.ended || state.hardwareFault || state.memory || state.outageActive || state.bulletinActive) return;
+    if (state.ended || state.hardwareFault || state.memory || state.outageActive || state.bulletinActive || state.morseGame) return;
     const activeCard = DECK.find((c) => c.id === state.currentCardId);
     if (activeCard && activeCard.type === "memory_letter") return;
     if (state.tuning) {
@@ -2879,6 +3052,8 @@ function restart() {
   if (memoryTickHandle) { clearInterval(memoryTickHandle); memoryTickHandle = null; }
   cancelRepairHold();
   stopOxygenDrain();
+  state.morseGame = null;
+  els.morseGameEl.hidden = true;
   state.power = 70;
   state.trust = 50;
   state.sanity = 80;
@@ -2916,6 +3091,7 @@ function restart() {
   els.bulletinOverlay.classList.remove("show");
   els.canteenOverlay.classList.remove("show");
   document.documentElement.classList.remove("drowsy");
+  els.criticalWarning.hidden = true;
   updateShiftClockDisplay();
   els.cardStage.classList.remove("memory-active");
   els.outageOverlay.classList.remove("show", "flicker-out");
@@ -2935,6 +3111,8 @@ function cacheEls() {
   els.outageScene = qs(".outage-scene");
   els.shiftClock = qs(".shift-clock");
   els.hudCredits = qs(".hud-credits");
+  els.nightShiftTag = qs(".night-shift-tag");
+  els.criticalWarning = qs(".critical-warning");
   els.bulletinOverlay = qs(".bulletin-overlay");
   els.bulletinDayNum = qs(".bulletin-day-num");
   els.bulletinHeadline = qs(".bulletin-headline");
@@ -2970,6 +3148,12 @@ function cacheEls() {
   els.tunerLed = qs(".tuner-led");
   els.tunerStatusText = qs(".tuner-status-text");
   els.tunerLockFill = qs(".tuner-lock-fill");
+  els.morseGameEl = qs(".morse-game");
+  els.morseLamp = qs(".morse-lamp");
+  els.morseStatusText = qs(".morse-status-text");
+  els.morseInputDisplay = qs(".morse-input-display");
+  els.morseTapBtn = qs(".morse-tap-btn");
+  els.morseReplayBtn = qs(".morse-replay-btn");
   els.hintLeft = qs(".drag-hint.left");
   els.hintRight = qs(".drag-hint.right");
   els.stampLeft = qs(".stamp-left");
@@ -3304,6 +3488,7 @@ function init() {
   bindPowerOutageEvents();
   bindCanteenEvents();
   bindBulletinEvents();
+  bindMorseEvents();
   // bindParallaxTilt(); — kullanıcı isteğiyle kapatıldı: fare hareketinde arka planın eğilmesi itici bulundu.
   bindKeyboard();
   els.restartBtn.addEventListener("click", restart);
